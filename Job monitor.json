@@ -1,0 +1,1270 @@
+{
+	"info": {
+		"_postman_id": "7a6a90c2-e2f2-41b3-b293-133473960ee0",
+		"name": "Job monitor",
+		"description": "Fro requirements , please see CSO site verification runner.json.  \n\n***job_id*** environmental variable\n\n***base_url*** environmental variable ie [https://cso.juniper.net](https://cso.juniper.netusername)\n\n***username*** environmental variable, ie cso username  \n***password*** environmental variable, ie cso password  \n***tenant_name*** environmental variable, ie cso tenant",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Device Error query",
+			"item": [
+				{
+					"name": "Get Job-step 1",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = JSON.parse(responseBody);",
+									"var moment = require('moment');",
+									"var jsonData = jsonData.job;",
+									"//console.log(jsonData);",
+									"",
+									"status = jsonData.status;",
+									"uuid = jsonData.uuid;",
+									"console.log(`Status ... job: ${jsonData.display_name} is in ${status}`);",
+									"pm.collectionVariables.set('request_id_date',moment.unix(jsonData.end_time).format().substring(0,10));",
+									"console.log(`Query end time: ${pm.collectionVariables.get('request_id_date')}`);",
+									"",
+									"if (typeof jsonData['request_id'] != 'undefined') {",
+									"    pm.collectionVariables.set('x_request_id',jsonData['request_id']);",
+									"    console.log(`- x-reuest-id : ${pm.collectionVariables.get('x_request_id')}`);",
+									"}",
+									"",
+									"if (status === 'in-progress') {",
+									"    nextRequest = null;",
+									"    pm.test.skip(`Job ${jsonData.display_name}still in progress ... `);",
+									"}",
+									"else {",
+									"    pm.test(`${jsonData.display_name} ... was success`, function () {",
+									"        pm.expect(status).to.equal(\"success\");",
+									"    });",
+									"}",
+									"",
+									"if (Array.isArray(jsonData.summary.task_tree.children)) {",
+									"    task_count = jsonData.summary.task_count;",
+									"    fail_count = jsonData.summary.fail_count;",
+									"    console.log(`Job ${jsonData.display_name} has: ${status}`);",
+									"    console.log(`- Job ID: ${uuid}`);",
+									"    console.log(`- It had ${task_count} child-jobs from which ${fail_count -1 } had failed`);",
+									"",
+									"    jsonData.summary.task_tree.children.forEach(function (child) {",
+									"        child_name = child.path.replace(`${uuid}/`, '');",
+									"        readable_name = child_name.replace(/\\//g, \" - \");",
+									"        //console.log(`${readable_name} .... ${child.task_status} `);",
+									"        if (child.task_status === 'in-progress') {",
+									"            pm.test.skip(`--- ${readable_name} still in progress ... `);",
+									"        }",
+									"        else  {",
+									"            if (child.task_status === 'failed') { console.log(`--- ${readable_name} ... has failed `); }",
+									"            // Child Job Test",
+									"            pm.test(`--- ${readable_name} ... was success`, function () {",
+									"                pm.expect(child.task_status).to.equal(\"success\");",
+									"            });",
+									"        }",
+									"",
+									"        if (Array.isArray(child.children)) {",
+									"            child.children.forEach(function (sub_child) {",
+									"                // Removing job ID from the string",
+									"                sub_child_name = sub_child.path.replace(`${uuid}/`, '');",
+									"                readable_name = sub_child_name.replace(/\\//g, \" - \");",
+									"                if (sub_child.task_status === 'in-progress') {",
+									"                    pm.test.skip('Job still in progress ... ');",
+									"                }",
+									"                else  {",
+									"                    if (sub_child.task_status === 'failed') { console.log(`------> FAILED Sub-child job: ${readable_name}`); }",
+									"                    // Child Job Test",
+									"                    pm.test(`------> Sub-Task: ${readable_name} ... was success`, function () {",
+									"                        pm.expect(sub_child.task_status).to.equal(\"success\");",
+									"                    });",
+									"                }",
+									"            })",
+									"        } //End of sub_child loop",
+									"    })",
+									"} // End of job children loop",
+									""
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									""
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "x-auth-token",
+								"value": "{{token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/job-service/job/:job_id",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"job-service",
+								"job",
+								":job_id"
+							],
+							"variable": [
+								{
+									"key": "job_id",
+									"value": "{{job_id}}",
+									"description": "Need to provide Job ID"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Errors from device-step-2",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = JSON.parse(responseBody);",
+									"var no_error = false",
+									"",
+									"jsonData.log.forEach(function(item) {",
+									"    // SKipping erros with unstable connection as they are way to common/often",
+									"    if(!item.message.includes(\"error: [Errno 104] Connection reset by peer\")){",
+									"        if(item.message.includes(`<nc:error-severity>error</nc:error-severity>`)) {",
+									"            filter =  item.message.match(/(?<=\\<nc\\:error\\-message\\>)(.*?)(?=\\<\\/nc\\:error\\-message\\>)/gm)",
+									"            console.log('ERROR on device ...:\\n',filter);",
+									"            console.log(`-------------------------------------------------`);",
+									"        }",
+									"        if(item.message.includes(`Deployment of config`)) {",
+									"            //filter =  item.message.match(/(?<=\\<nc\\:error\\-message\\>)(.*?)(?=\\<\\/nc\\:error\\-message\\>)/gm)",
+									"            console.log('General error:\\n',item.message);",
+									"            console.log(`-------------------------------------------------`);",
+									"        }",
+									"        else {",
+									"            no_error = true;",
+									"        }",
+									"        /*",
+									"        if(item.message.includes(`<nc:error-severity>warning</nc:error-severity>`)) {",
+									"            filter =  item.message.match(/(?<=\\<nc\\:error\\-message\\>)(.*?)(?=\\<\\/nc\\:error\\-message\\>)/gm)",
+									"            console.log('Warning:\\n',filter);",
+									"            console.log(`-------------------------------------------------`);",
+									"        }",
+									"        /*",
+									"        if (item.message.includes(`handle_deploy_in_single_commit`)) {",
+									"            console.log(item.message);",
+									"            console.log(`-------------------------------------------------`)",
+									"        }",
+									"        */",
+									"    }",
+									"})",
+									"if (no_error == true) {",
+									"    console.log('Device does not report any error massage during commit .....')",
+									"}",
+									""
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "x-auth-token",
+								"type": "text",
+								"value": "{{token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\"log_id\" : \"{{x_request_id}}\",\n\"index_date\" : \"{{request_id_date}}\",\n\"level\": \"ERROR\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/fetch-logs-by-id",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"fetch-logs-by-id"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Warnings from device-step-3",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = JSON.parse(responseBody);",
+									"var no_error = false",
+									"",
+									"jsonData.log.forEach(function(item) {",
+									"    // SKipping erros with unstable connection as they are way to common/often",
+									"    if(!item.message.includes(\"error: [Errno 104] Connection reset by peer\")){",
+									"        if(item.message.includes(`<nc:error-severity>error</nc:error-severity>`)) {",
+									"            filter =  item.message.match(/(?<=\\<nc\\:error\\-message\\>)(.*?)(?=\\<\\/nc\\:error\\-message\\>)/gm)",
+									"            console.log('ERROR:\\n',filter);",
+									"            console.log(`-------------------------------------------------`);",
+									"        }",
+									"        else {",
+									"            no_error = true;",
+									"        }",
+									"        if(item.message.includes(`<nc:error-severity>warning</nc:error-severity>`)) {",
+									"            filter =  item.message.match(/(?<=\\<nc\\:error\\-message\\>)(.*?)(?=\\<\\/nc\\:error\\-message\\>)/gm)",
+									"            console.log('Warning:\\n',filter);",
+									"            console.log(`-------------------------------------------------`);",
+									"        }",
+									"        /*",
+									"        if (item.message.includes(`handle_deploy_in_single_commit`)) {",
+									"            console.log(item.message);",
+									"            console.log(`-------------------------------------------------`)",
+									"        }",
+									"        */",
+									"    }",
+									"})",
+									"if (no_error == true) {",
+									"    console.log('Device does not report any error massage during commit only warning')",
+									"}",
+									""
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "x-auth-token",
+								"type": "text",
+								"value": "{{token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\"log_id\" : \"{{x_request_id}}\",\n\"index_date\" : \"{{request_id_date}}\",\n\"level\": \"ERROR\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/fetch-logs-by-id",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"fetch-logs-by-id"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "FW-filter down devices",
+			"item": [
+				{
+					"name": "1-Get device",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = JSON.parse(responseBody);",
+									"//var device_list = new Map;  // IF assigned to map",
+									"var device_list = []; ",
+									"var devices = [];",
+									"",
+									"if (Array.isArray(jsonData.device)) {",
+									"    jsonData.device.forEach(function(item) {",
+									"        pm.test.skip(`Device ${item.fq_name[2]} ... `); ",
+									"        devices.push(item.fq_name[2]);",
+									"        if (item.fq_name.includes(pm.environment.get('tenant_name'))) {",
+									"            //pm.environment.set('device_map',device_list.set(item.fq_name[2],item.uuid));  // IF assigned to map",
+									"            pm.collectionVariables.set(item.uuid + ':JUNOS',item.fq_name[2])",
+									"            //device_list.set(item.fq_name[2]); // IF assigned to map",
+									"            device_list.push(item.uuid + ':JUNOS');",
+									"        }",
+									"    })",
+									"}",
+									"console.log('All Devices (UUID)in tenant:\\n',device_list);",
+									"devices.sort();",
+									"console.log(devices);",
+									"pm.collectionVariables.set('devices',JSON.stringify(device_list));"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"var devices = pm.collectionVariables.get(\"devices\");",
+									"var down_devices = pm.collectionVariables.get(\"down_devices\");",
+									"// If Collection varialble devices is found and NOT empty, read-it and delete each item.",
+									"// That is because NTT like to change device names during deployment testing in production and reusiing same boxes (it seruial numbers)",
+									"if (devices && devices.length > 0) {",
+									"    devices = JSON.parse(devices);",
+									"    devices.forEach(function(device) {",
+									"        pm.collectionVariables.unset(device);",
+									"    })",
+									"    pm.collectionVariables.set('devices','');",
+									"}",
+									"if (down_devices && down_devices.length > 0) {",
+									"    down_devices = JSON.parse(down_devices);",
+									"    down_devices.forEach(function(device_down) {",
+									"        pm.collectionVariables.unset(device_down);",
+									"    })",
+									"    pm.collectionVariables.set('down_devices','');",
+									"}",
+									"console.log('Cleaning existing device list ...');"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "x-auth-token",
+								"type": "text",
+								"value": "{{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/ems-central/device",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"ems-central",
+								"device"
+							]
+						},
+						"description": "# GET retrieving list of ALL devices\n\nThis GET will retrieve list of all devices in given tenant, depending on **Enviroment** used.Store each one *device name* and *UUID* as local variable and also add UUID to a list.\nReason is that to get status -** UP or DOWN** requires UUID with string -JUNOS. Unfortunately names do not work.\n \n1. Look if local collection variable exist and is not empty. If so, it will get deleted along with each device UUID in PRE-REQUEST\n2. Using get it will repopulate the list of devices using UUID and store each UUID with matching name."
+					},
+					"response": []
+				},
+				{
+					"name": "2-Filter based on UP/DOWN status",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = JSON.parse(responseBody);",
+									"var devices = pm.collectionVariables.get('devices')",
+									"devices = JSON.parse(devices);",
+									"down_device = [];",
+									"//console.log('Device list:\\n',devices);",
+									"",
+									"if (Array.isArray(jsonData.output.device_connection_info)) {",
+									"    jsonData.output.device_connection_info.forEach(function(item) {",
+									"        // Remove down DEVICE's from list",
+									"        if (item.data.status != 'UP') {",
+									"            //pm.collectionVariables.unset(item.deviceid);",
+									"            down_device.push(item.deviceid);",
+									"        }",
+									"    })",
+									"}",
+									"devices = devices.filter(item => !down_device.includes(item));",
+									"console.log('Down device list:\\n', down_device);",
+									"console.log('UP Device list:\\n',devices);",
+									"pm.collectionVariables.set('down_devices',JSON.stringify(down_device));",
+									"pm.collectionVariables.set('devices',JSON.stringify(devices));"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "x-auth-token",
+								"value": "{{token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"input\": {\n        \"deviceid\": {{devices}}\n    }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/device-connectivity/get-device-connection-info",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"device-connectivity",
+								"get-device-connection-info"
+							]
+						},
+						"description": "# GET status of requested devices\n\nThis GET will get status of requested devices in given tenant, depending on **Enviroment** used. It will provide in Body the list of ALL devices retrieved in step 1(collection variable **devices**). \n \n1. If retrieved status is a list, go one by one item\n2. Removes as local variable devices that are **NOT UP** by UUID and also remove their UUID from a list."
+					},
+					"response": []
+				},
+				{
+					"name": "3-AUTO_FW FAILED Job(s) last X-hours/days",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = JSON.parse(responseBody);",
+									"var moment = require('moment');",
+									"",
+									"// Map Device UUID back to name as FW job contains device name and not UUID",
+									"var devices = pm.collectionVariables.get(\"devices\");",
+									"var devices_down = pm.collectionVariables.get(\"down_devices\");",
+									"var up_devices = [];",
+									"var down_devices = [];",
+									"",
+									"if (devices && devices.length > 0) {",
+									"    devices = JSON.parse(devices);",
+									"    devices.forEach(function(name){",
+									"        up_devices.push(pm.collectionVariables.get(name));",
+									"    })",
+									"}    ",
+									"if (devices_down && devices_down.length > 0) {",
+									"    devices_down = JSON.parse(devices_down);",
+									"    devices_down.forEach(function(down_name){",
+									"        down_devices.push(pm.collectionVariables.get(down_name));",
+									"    })",
+									"}",
+									"",
+									"console.log ('Device\\'s UP:\\n',up_devices);",
+									"console.log ('Device\\'s currently down:\\n',down_devices);",
+									"// Debug to view inside of loop in case of troubleshooting",
+									"//console.log(`Lenght of job array ${jobitems}`);",
+									"",
+									"// Diving to individual job by findingout number of jobs(jobitems) ",
+									"var jobitems = jsonData.total",
+									"for (var i = 0; i < jobitems; i++) {",
+									"    // assign given i job to item",
+									"    var item = jsonData.job[i];",
+									"    //assign variables from each job",
+									"    status = item.status;",
+									"    name = item.display_name.replace(/_/g,' ');",
+									"    task_count = item.task_count;",
+									"    fail_count = item.summary.fail_count;",
+									"    uuid = item.uuid;",
+									"    // Parent Job Test",
+									"    pm.test(`${name} ... was success`, function () {",
+									"        pm.expect(status).to.equal(\"success\");",
+									"    });",
+									"    //If theres is job fialure",
+									"    if (fail_count != 0) {",
+									"        // Child_size is count of pass and failed children job",
+									"        child_size = item.summary.task_tree.child_task_status.failed + item.summary.task_tree.child_task_status.success;",
+									"        date = moment.unix(item.end_time).format().substring(0,16);",
+									"        date = moment.unix(item.end_time).format('llll');",
+									"        console.log('----------------------------------------------------------');",
+									"        console.log(`${name.substring(0,10)} job has: ${item.status}, Job ID: ${item.uuid} `);",
+									"        //console.log(`- Job ID: ${item.uuid}`);",
+									"        console.log(`- It had ${item.task_count} child-jobs from which ${fail_count - 1} had failed. Job End time: ${date}`);",
+									"        //console.log(`---  Lenght of child job array ${child_size}`);",
+									"",
+									"        // diving in to child job",
+									"        for (var j = 0; j < child_size; j++) {",
+									"            var child = item.summary.task_tree.children[j];",
+									"            if (child.task_status != \"success\") {",
+									"                // Removing job ID from the string",
+									"                child_name = child.path.replace(`${uuid}/`, '');",
+									"                console.log(`--- FAILED Child job: ${child_name}`);",
+									"",
+									"                // Diving in to SUB-CHILD of a job",
+									"                sub_child_size = child.child_task_status.failed + child.child_task_status.success;",
+									"                for (var k = 0; k < sub_child_size; k++) {",
+									"                    var sub_child = child.children[k];",
+									"                    sub_child_name = sub_child.path.replace(`${uuid}/`, '');",
+									"                    readable_name = sub_child_name.replace(/\\//g,\" - \");",
+									"                    sub_child_name = sub_child_name.replace(`${child_name}/`,'');",
+									"                    // IF sub job status failed and is not not up",
+									"                    if ((sub_child.task_status != \"success\") && (up_devices.indexOf(sub_child_name.replace(/_.*/g,'')) == -1)) {",
+									"                        //if (up_devices.indexOf(sub_child_name) > -1) {console.log(`------> Device up ..... ${readable_name}`);}",
+									"                     ",
+									"                        // Removing job ID from the string",
+									"                        console.log(`------> FW deploymnet on ${sub_child_name.replace(/_.*/g,'')} failed due to device being DOWN`);",
+									"                        // Child Job Test",
+									"                        pm.test.skip(`------> ${sub_child_name.replace(/_.*/g,'')} has ${sub_child.task_status} due to being down ...`);",
+									"                    }",
+									"                    else  if ((sub_child.task_status != \"success\") && (up_devices.indexOf(sub_child_name.replace(/_.*/g,'')) != -1)) {",
+									"                        console.log(`------> FW deploymnet on ${sub_child_name.replace(/_.*/g,'')} failed when the device was UP !!!`);",
+									"                        pm.test(`------> ${sub_child_name.replace(/_.*/g,'')} has ${sub_child.task_status} when the device was UP !!!`, function () {",
+									"                            pm.expect(sub_child.task_status).to.equal(\"success\");",
+									"                        });",
+									"                    }",
+									"                    /*",
+									"                    else {",
+									"                        pm.test(`------> ${sub_child_name.replace(/[_d+]/g,'')} was .... ${sub_child.task_status}`, function () {",
+									"                            pm.expect(sub_child.task_status).to.equal(\"success\");",
+									"                        });",
+									"",
+									"                    }",
+									"                   */",
+									"                }",
+									"            }",
+									"        }",
+									"    }",
+									"}",
+									""
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"var moment = require('moment');",
+									"//var start_time = moment().subtract(1, 'days').unix();",
+									"var start_time = moment().subtract(4, 'hours').unix();",
+									"",
+									"pm.collectionVariables.set('Global_time', moment().unix());",
+									"pm.collectionVariables.set('Unix_Start_time', start_time);",
+									""
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "x-auth-token",
+								"type": "text",
+								"value": "{{token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"query\": {\n        \"bool\": {\n            \"must\": [{\n                \"range\": {\n                    \"start_time\": {\n                        \"gte\": \"{{Unix_Start_time}}\"\n                    }\n                }\n            }, {\n                \"range\": {\n                    \"start_time\": {\n                        \"lte\": \"{{Global_time}}\"\n                    }\n                }\n            }, {\n                \"regexp\": {\n                    \"display_name._raw\": \".*AUTO_FW+.*\"\n                }\n            }],\n            \"should\": [],\n            \"must_not\": [{\n                \"term\": {\n                    \"hidden_flag\": true\n                }\n            }]\n        }\n    },\n    \"from\": 0,\n    \"size\": 500,\n    \"sort\": [{\n        \"start_time._raw\": {\n            \"order\": \"asc\"\n        }\n    }],\n    \"detail\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/job-service/job/_filter",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"job-service",
+								"job",
+								"_filter"
+							]
+						},
+						"description": "# POST job filter\n\nThis POST will retrieve list of job in given tenant based on the filter provided in Body, depending on **Enviroment** used.\n\n \n1. *Current time* and *Start time* are stored and used for filter in PRE-REQUEST.It could be hours or days.\n2. In body, we look only for JOB with name AUTO-FW ( that is only FW jobs) with **MAX 500** length.\n3. Test each job and any sub-jobs and compare with list of UP devices. If devices is not UP, it will not test specific job."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Get Token",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"function cleanup() {",
+							"    const clean = _.keys(pm.collectionVariables.toObject())",
+							"    _.each(clean, (arrItem) => {",
+							"        pm.collectionVariables.unset(arrItem);",
+							"        //console.log(`Cleaning Item: ${arrItem}`);",
+							"    })",
+							"}",
+							"console.log('Cleaning collection variables ...', cleanup());"
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.environment.set(\"token\", postman.getResponseHeader(\"X-Subject-Token\"));",
+							"console.log(`Geting token for -`+ pm.info.requestName);",
+							"console.log(`Got Token: ${pm.environment.get('token')}`);"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"name": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"auth\": {\r\n\t\"identity\": {\r\n\t\t\"methods\": [\"password\"],\r\n\t\t\"password\": {\r\n\t\t\t\"user\": {\r\n\t\t\t\t\"domain\": {\r\n\t\t\t\t\t\"id\": \"default\"\r\n\t\t\t\t},\r\n\t\t\t\t\"name\": \"{{user_name}}\",\r\n\t\t\t\t\"password\": \"{{password}}\"\r\n\t\t\t}\r\n\t\t}\r\n\t},\r\n\t\"scope\": {\r\n     \"project\": {\r\n       \"domain\": {\r\n         \"id\": \"default\"\r\n       },\r\n       \"name\": \"{{tenant_name}}\"\r\n     }\r\n    }\r\n  }\r\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/v3/auth/tokens",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"v3",
+						"auth",
+						"tokens"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GET Job(s) last hour",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"var moment = require('moment');",
+							"var start_time = moment().subtract(1, 'hour').unix();",
+							"",
+							"pm.environment.set('job_id','');",
+							"pm.environment.set('x_request_id','');",
+							"pm.environment.set('request_id_date','');",
+							"pm.environment.set('Global_time', moment().unix());",
+							"// Job in last 30 minutes unix",
+							"    //pm.environment.set('Start_time', moment().subtract(30, 'minutes').unix());",
+							"// Job in last 30 minutes human readable",
+							"    //pm.environment.set('Start_time', moment().subtract(30, 'minutes'));",
+							"// Job in last 24 hours unix",
+							"    //pm.environment.set('Unix_Start_of', moment().startOf('day'));",
+							"",
+							"pm.environment.set('Unix_Start_time', start_time);",
+							"",
+							"// End time 30 minutes from now - jsut a test",
+							"    //pm.environment.set('End_time', moment().add(30, 'minutes'));",
+							"    //pm.environment.set('End_time', moment().add(30, 'minutes').unix());",
+							"",
+							"//console.log(\"Pre-request start------------------------\");",
+							"console.log(` Query Start time: ${moment.unix(start_time).format('dd MMMM Do YYYY, hh:mm:ss a')}`);",
+							"console.log(` Queary End time (LTE): ${moment()}`);",
+							"//console.log(\"Pre-request end------------------------\");",
+							"",
+							"/*",
+							"console.log(\"Pre-request start------------------------\");",
+							"console.log(\"AUTO jobs starting today at 00:00\");",
+							"console.log(`Current Time(unix): ${pm.globals.get('Global_time')}`);",
+							"console.log(`Current Time(LTE): ${moment()}`);",
+							"console.log(`Start time(-30 min): ${pm.globals.get('Start_time')}`);",
+							"console.log(`Start time(-30 min): ${moment().subtract(30, 'minutes')}`);",
+							"//console.log(`Start time(-1 day): ${moment().subtract(1, 'day')}`);",
+							"//console.log(`Start time(-1 day) unix: ${moment().subtract(1, 'day').unix()}`);",
+							"console.log(`Start of(unix): ${pm.globals.get('Unix_Start_of')}`);",
+							"console.log(`Start of(GTE): ${moment().startOf('day')}`);",
+							"//console.log(`Start time(-1 day) unix: ${moment().subtract(1, 'day').unix()}`);",
+							"console.log(\"Pre-request end------------------------\");",
+							"*/"
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"var jsonData = JSON.parse(responseBody);",
+							"var jobarray = [];",
+							"",
+							"// Debug to view inside of loop in case of troubleshooting",
+							"//console.log(`Lenght of job array ${jobitems}`);",
+							"pm.test(\"Status code is 200\", function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"// Diving to individual job by findingout number of jobs(jobitems) ",
+							"var jobitems = jsonData.total",
+							"for (var i = 0; i < jobitems; i++) {",
+							"    // assign given i job to item",
+							"    var item = jsonData.job[i];",
+							"    //assign variables from each job",
+							"    status = item.status;",
+							"    name = item.display_name.replace(/_/g,' ');",
+							"    task_count = item.task_count;",
+							"    fail_count = item.summary.fail_count;",
+							"    uuid = item.uuid;",
+							"    // Parent Job Test",
+							"    if (status === 'in-progress') {",
+							"        pm.test.skip(`Job ${name}still in progress ... `);    }",
+							"    else {",
+							"        pm.test(`${name} ... was success`, function () {",
+							"            pm.expect(status).to.equal(\"success\");",
+							"        });",
+							"    }",
+							"    //If theres is job fialure",
+							"    if (fail_count != 0) {",
+							"        // Child_size is count of pass and failed children job",
+							"        child_size = item.summary.task_tree.child_task_status.failed + item.summary.task_tree.child_task_status.success;",
+							"        console.log(`Job ${name} has: ${item.status}`);",
+							"        console.log(`- Job ID: ${item.uuid}`);",
+							"        console.log(`- It had ${item.task_count} child-jobs from which ${fail_count - 1} had failed`);",
+							"",
+							"        //in case of service provisioning fails",
+							"        if (name.toLowerCase().includes('service provisioning')){",
+							"            pm.environment.set('job_id',item.uuid);",
+							"            console.log(`Env job_id set to: ${pm.environment.get('job_id')}`);",
+							"            if (typeof item['request_id'] != 'undefined') {",
+							"                pm.environment.set('x_request_id',item['request_id']);",
+							"                console.log(`Env x-reuest-id set to: ${pm.environment.get('x_request_id')}`);",
+							"            }",
+							"            if (typeof item.id_perms['created'] != 'undefined') {",
+							"                pm.environment.set('request_id_date',item.id_perms.created.substring(0,10));",
+							"                console.log(`Env request_id_date: ${pm.environment.get('request_id_date')}`);",
+							"            }",
+							"            nextRequest = \"device_errors\";",
+							"        }",
+							"         ",
+							"        //console.log(`---  Lenght of child job array ${child_size}`);",
+							"",
+							"        // diving in to child job",
+							"        for (var j = 0; j < child_size; j++) {",
+							"            var child = item.summary.task_tree.children[j];",
+							"            if (child.task_status != \"success\") {",
+							"                // Removing job ID from the string",
+							"                child_name = child.path.replace(`${uuid}/`, '');",
+							"                console.log(`--- FAILED Child job: ${child_name}`);",
+							"",
+							"                // Diving in to SUB-CHILD of a job",
+							"                sub_child_size = child.child_task_status.failed + child.child_task_status.success;",
+							"                for (var k = 0; k < sub_child_size; k++) {",
+							"                    var sub_child = child.children[k];",
+							"                    sub_child_name = sub_child.path.replace(`${uuid}/`, '');",
+							"                    readable_name = sub_child_name.replace(/\\//g,\" - \");",
+							"                    if (sub_child.task_status != \"success\") {",
+							"                        // Removing job ID from the string",
+							"                        console.log(`------> FAILED Sub-child job: ${sub_child_name}`);",
+							"                        // Child Job Test",
+							"                        pm.test(`------> Sub-Task: ${readable_name} ... was success`, function () {",
+							"                            pm.expect(sub_child.task_status).to.equal(\"success\");",
+							"                        });",
+							"",
+							"                    }",
+							"",
+							"                }",
+							"            }",
+							"        }",
+							"    }",
+							"}",
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "x-auth-token",
+						"type": "text",
+						"value": "{{token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"query\": {\n        \"bool\": {\n            \"must\": [{\n                \"range\": {\n                    \"start_time\": {\n                        \"gte\": \"{{Unix_Start_time}}\"\n                    }\n                }\n            }, {\n                \"range\": {\n                    \"start_time\": {\n                        \"lte\": \"{{Global_time}}\"\n                    }\n                }\n            }],\n            \"should\": [],\n            \"must_not\": [{\n                \"term\": {\n                    \"hidden_flag\": true\n                }\n            }]\n        }\n    },\n    \"from\": 0,\n    \"size\": 500,\n    \"sort\": [{\n        \"start_time._raw\": {\n            \"order\": \"asc\"\n        }\n    }],\n    \"detail\": true\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/job-service/job/_filter",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"job-service",
+						"job",
+						"_filter"
+					]
+				},
+				"description": "This will return jobs of lost hour (unless changed) of given tenant (depended on environment).\n\nIf it contains failed 'Service provisioning' job, it will store *job-id*, *x_request_id* and date of job (*request_id_date*) as variable to be used for device_errors or \"Errors from device-step-2\""
+			},
+			"response": []
+		},
+		{
+			"name": "device_errors",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"var jsonData = JSON.parse(responseBody);",
+							"",
+							"",
+							"jsonData.log.forEach(function(item) {",
+							"    // SKipping erros with unstable connection as theyare often",
+							"    if(!item.message.includes(\"error: [Errno 104] Connection reset by peer\")){",
+							"        if(item.message.includes(`<nc:error-severity>error</nc:error-severity>`)) {",
+							"            filter =  item.message.match(/(?<=\\<nc\\:error\\-message\\>)(.*?)(?=\\<\\/nc\\:error\\-message\\>)/gm)",
+							"            //filter = regex.test(item.message);",
+							"            //filter = item.message.match(/(?<=\\<nc\\:error\\-message\\>)(.*)(?=\\<\\/nc\\:error\\-message\\>)/gs)",
+							"            console.log(filter);",
+							"            console.log(`-------------------------------------------------`);",
+							"        }",
+							"        /*",
+							"        if (item.message.includes(`handle_deploy_in_single_commit`)) {",
+							"            console.log(item.message);",
+							"            console.log(`-------------------------------------------------`)",
+							"        }",
+							"        */",
+							"    }",
+							"",
+							"})",
+							"",
+							"/*",
+							"const output = jsonData.log.map(item => item.message);",
+							"console.log(output);",
+							"",
+							"",
+							"",
+							"var jobitems = jsonData.hits.total",
+							"console.log(`Lenght of job array ${jobitems}`);",
+							"// Diving to individual job",
+							"for (var i = 0; i < jobitems; i++) {",
+							"    var item = jsonData.hits.hits[i];",
+							"    status = item._source.status;",
+							"    name = item._source.job_name",
+							"    //task_count = item.task_count;",
+							"    //fail_count = item.summary.fail_count;",
+							"    message = item._source.message;",
+							"    // Parent Job Test",
+							"    pm.test(`Job ${message} ... was success`, function () {",
+							"        pm.expect(status).to.be.oneOf([\"success\",\"in-progress\"]);",
+							"    });",
+							"",
+							"    if (name != \"site_edit_EMEA01_csp.tssm_site_edit_3f3f8fef06214874a167ea4443840087\") {",
+							"        console.log(`${name} has: ${message} - ${status}`);    ",
+							"    }",
+							"    else {",
+							"        console.log(`${message} - ${status}`);    ",
+							"    }",
+							"    //console.log(`Job ${item.name} has: ${item.status}`);",
+							"    //console.log(`- Job ID: ${item.uuid}`);",
+							"    //console.log(`- It had ${item.task_count} child-jobs from which ${fail_count - 1} had failed`);",
+							"}",
+							"*/"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "x-auth-token",
+						"type": "text",
+						"value": "{{token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n\"log_id\" : \"{{x_request_id}}\",\n\"index_date\" : \"{{request_id_date}}\",\n\"level\": \"ERROR\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://cso.juniper.net/fetch-logs-by-id",
+					"protocol": "https",
+					"host": [
+						"cso",
+						"juniper",
+						"net"
+					],
+					"path": [
+						"fetch-logs-by-id"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "policy deployment detail",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"var jsonData = JSON.parse(responseBody);",
+							"var good_sites = [];",
+							"var bad_sites = [];",
+							"var no_error = false;",
+							"",
+							"",
+							"if (Array.isArray(jsonData.output.site_and_device_list)) {",
+							"    jsonData.output.site_and_device_list.forEach(function(item) {",
+							"        //console.log(`Site: ${item.site_name} has ${item.status}`);",
+							"        pm.test",
+							"        if ((item.status == 'failed') && bad_sites.indexOf(item.site_name) === -1 ){",
+							"            bad_sites.push(item.site_name);",
+							"        }",
+							"        else {",
+							"            good_sites.push(item.site_name);",
+							"        }",
+							"        pm.test(`${item.site_name} ... was success`, function () {",
+							"            pm.expect(item.status).to.equal(\"success\");",
+							"        });",
+							"",
+							"    })",
+							"}",
+							"console.log('Failed sites:\\n',bad_sites);",
+							"console.log('Succesfull Sites:\\n',good_sites);",
+							"",
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "x-auth-token",
+						"value": "{{token}}",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"input\": {\n        \"job_uuid\": \"{{job_id}}\"\n    }\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/policy-mgmt/get-deploy-job-details",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"policy-mgmt",
+						"get-deploy-job-details"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "policy deployment summary",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"var jsonData = JSON.parse(responseBody);",
+							"",
+							"pm.test(`${jsonData.output.policy_objects[0]['policy_name']} ... was success`, function () {",
+							"    pm.expect(jsonData.output.status).to.equal(\"success\");",
+							"});",
+							"",
+							"console.log(`Site :${jsonData.output.policy_objects[0]['policy_name']} ... ${jsonData.output.status}`);",
+							"",
+							"",
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "x-auth-token",
+						"value": "{{token}}",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"input\": {\n        \"job_uuid\": \"{{job_id}}\"\n    }\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/policy-mgmt/get-deploy-job-summary",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"policy-mgmt",
+						"get-deploy-job-summary"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Job status (specific ID in URL)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"// JOB id of AUTO_SDWAN policy : 9687003b-aa33-4e52-bf06-ef29f69b0351",
+							"// JOB id of Service provisioning : 0c8e8633-a7f5-48be-8c35-796330723a95",
+							"// JOB id of DHCP update: 96fa84f8-a134-403f-83f5-b778f49a715a",
+							"",
+							"var jsonData = JSON.parse(responseBody);",
+							"var moment = require('moment');",
+							"var jsonData = jsonData.job;",
+							"//console.log(jsonData);",
+							"",
+							"job_id = jsonData.uuid;",
+							"status = jsonData.status;",
+							"uuid = jsonData.uuid;",
+							"//console.log(`Status ... job: ${jsonData.display_name} is in ${status}`);",
+							"",
+							"if (typeof jsonData['request_id'] != 'undefined') {",
+							"    pm.environment.set('x_request_id',jsonData['request_id']);",
+							"    //console.log(`- x-reuest-id : ${pm.environment.get('x_request_id')}`);",
+							"}",
+							"",
+							"if (status === 'in-progress') {",
+							"    pm.test.skip(`Job ${jsonData.display_name}still in progress ... `);",
+							"}",
+							"else {",
+							"    pm.test(`${jsonData.display_name.replace(/_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{9,109}$/g, \" \")} ... was ${status}`, function () {",
+							"    //pm.test(`${jsonData.display_name} ... was success`, function () {",
+							"        pm.expect(status).to.equal(\"success\");",
+							"    });",
+							"}",
+							"",
+							"if (Array.isArray(jsonData.summary.task_tree.children)) {",
+							"    task_count = jsonData.summary.task_count;",
+							"    fail_count = jsonData.summary.fail_count;",
+							"    date = moment.unix(jsonData.end_time).format('llll');",
+							"    console.log('----------------------------------------------------------');",
+							"    //console.log(`${jsonData.display_name.substring(0,15)} job has: ${status}, Job ID: ${uuid} `);",
+							"    console.log(`${jsonData.display_name.replace(/_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{9,109}$/g, \" \")} job has: ${status}, Job ID: ${uuid} `);",
+							"    console.log(`- It had ${task_count} child-jobs from which ${fail_count - 1} had failed. Job End time: ${date}`);",
+							"    ",
+							"    jsonData.summary.task_tree.children.forEach(function (child) {",
+							"        child_name = child.path.replace(`${uuid}/`, '');",
+							"        readable_name = child_name.replace(/\\//g, \" - \");",
+							"        //console.log(`${readable_name} .... ${child.task_status} `);",
+							"        if (child.task_status === 'in-progress') {",
+							"            pm.test.skip(`--- ${readable_name} still in progress ... `);",
+							"        }",
+							"        else  {",
+							"            if (child.task_status === 'failed') { console.log(`--- ${readable_name} ... has failed `); }",
+							"            // Child Job Test",
+							"            pm.test(`--- ${readable_name} ... was success`, function () {",
+							"                pm.expect(child.task_status).to.equal(\"success\");",
+							"            });",
+							"        }",
+							"",
+							"        if (Array.isArray(child.children)) {",
+							"            child.children.forEach(function (sub_child) {",
+							"                // Removing job ID from the string",
+							"                sub_child_name = sub_child.path.replace(`${uuid}/`, '');",
+							"                readable_name = sub_child_name.replace(/\\//g, \" - \");",
+							"                sub_child_name = sub_child_name.replace(`${child_name}/`,'');",
+							"                if (sub_child.task_status === 'in-progress') {",
+							"                    pm.test.skip('Job still in progress ... ');",
+							"                }",
+							"                else  {",
+							"                    if (sub_child.task_status === 'failed') { console.log(`------> FAILED Sub-child job: ${sub_child_name.replace(/_.*/g,'')}`); }",
+							"                    // Child Job Test",
+							"                    pm.test(`------> Sub-Task: ${sub_child_name.replace(/_.*/g,'')} ... was success`, function () {",
+							"                        pm.expect(sub_child.task_status).to.equal(\"success\");",
+							"                    });",
+							"                }",
+							"            })",
+							"        } //End of sub_child loop",
+							"    })",
+							"} // End of job children loop",
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "x-auth-token",
+						"value": "{{token}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "https://cso.juniper.net/job-service/job/{{job_id}}",
+					"protocol": "https",
+					"host": [
+						"cso",
+						"juniper",
+						"net"
+					],
+					"path": [
+						"job-service",
+						"job",
+						"{{job_id}}"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get Service-provisioning (step 1)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"var jsonData = JSON.parse(responseBody);",
+							"var jobitems = jsonData.hits.total",
+							"console.log(`Lenght of job array ${jobitems}`);",
+							"// Diving to individual job",
+							"",
+							"jsonData.hits.hits.forEach(function(item){",
+							"    status = item._source.status;",
+							"    name = item._source.job_name;",
+							"    //task_count = item.task_count;",
+							"    //fail_count = item.summary.fail_count;",
+							"    message = item._source.message;",
+							"    pm.environment.set('x_request_id',item._source['x-request-id']);",
+							"    // Parent Job Test",
+							"    if (name != \"site_edit_EMEA01_csp.tssm_site_edit_3f3f8fef06214874a167ea4443840087\") {",
+							"        console.log(`${name} has: ${message} - ${status}`);    ",
+							"        pm.test(`Job ${name} ... was success`, function () {",
+							"            pm.expect(status).to.be.oneOf([\"success\",\"in-progress\"]);",
+							"        });",
+							"    }",
+							"    else {",
+							"        console.log(`${message} - ${status}`);",
+							"        pm.test(`Job ${message} ... was success`, function () {",
+							"            pm.expect(status).to.be.oneOf([\"success\",\"in-progress\"]);",
+							"        });",
+							"    }",
+							"    console.log(`- x-reuest-id : ${pm.environment.get('x_request_id')}`);",
+							"})"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "x-auth-token",
+						"value": "{{token}}",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/job-service/joblogs?q=(job_type:csp.policy-mgmt.policy-deployments.deploy.FW%20AND%20job_id:%22{{job_id}}%22)&sort=@timestamp:asc&size=10000",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"job-service",
+						"joblogs"
+					],
+					"query": [
+						{
+							"key": "q",
+							"value": "(job_type:csp.policy-mgmt.policy-deployments.deploy.FW%20AND%20job_id:%22{{job_id}}%22)"
+						},
+						{
+							"key": "sort",
+							"value": "@timestamp:asc"
+						},
+						{
+							"key": "size",
+							"value": "10000"
+						}
+					]
+				}
+			},
+			"response": []
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	]
+}
