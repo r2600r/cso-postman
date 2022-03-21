@@ -1,0 +1,34 @@
+{
+	"id": "a2ef0ed8-5593-48c8-9406-929bbfdbc669",
+	"name": "environment-example",
+	"values": [
+		{
+			"key": "job_id",
+			"value": "",
+			"enabled": true
+		},
+		{
+			"key": "base_url",
+			"value": "https://cso.juniper.net",
+			"enabled": true
+		},
+		{
+			"key": "tenant_name",
+			"value": "TDEV01",
+			"enabled": true
+		},
+		{
+			"key": "password",
+			"value": "some_password",
+			"enabled": true
+		},
+		{
+			"key": "user_name",
+			"value": "user@company.com",
+			"enabled": true
+		}
+	],
+	"_postman_variable_scope": "environment",
+	"_postman_exported_at": "2022-03-21T20:01:48.013Z",
+	"_postman_exported_using": "Postman/9.14.14"
+}

@@ -1,0 +1,1163 @@
+{
+	"info": {
+		"_postman_id": "8af82a05-bd69-4774-8c47-717232a5185a",
+		"name": "CSO site verification runner",
+		"description": "This runner will query site deployment in CSO making sure it follows correct order (configure, bootstrap, zero, service provisioning, auto-nat/sdwan/fw and dhcp update for WAN_0/1.\n\n**Required**\n\n***job_id*** environmental variable\n\n***base_url*** environmental variable ie [https://cso.juniper.net](https://cso.juniper.netusername)\n\n***username*** environmental variable, ie cso username  \n***password*** environmental variable, ie cso password  \n***tenant_name*** environmental variable, ie cso tenant\n\n***site_id*** variable will be detected if ***job_id*** provided is for configure, bootstrap, zero, service provisioning",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "CSO-get_token",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"console.log(`-------------------- GET TOKEN for ${pm.environment.get('base_url')} - ${pm.environment.get('tenant_name')} --------------------------------------`);",
+							"function cleanup() {",
+							"    const clean = _.keys(pm.collectionVariables.toObject())",
+							"    _.each(clean, (arrItem) => {",
+							"        pm.collectionVariables.unset(arrItem);",
+							"        console.log(`Cleaning Item: ${arrItem}`);",
+							"    })",
+							"}",
+							"console.log(cleanup());"
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"//postman.setGlobalVariable(\"Tenant-Admin-OpenLab\", postman.getResponseHeader(\"X-Subject-Token\"));",
+							"pm.environment.set('token', postman.getResponseHeader(\"X-Subject-Token\"));",
+							"console.log(`Got Token: ${pm.environment.get('token')}`);"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"name": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"auth\": {\r\n\t\"identity\": {\r\n\t\t\"methods\": [\"password\"],\r\n\t\t\"password\": {\r\n\t\t\t\"user\": {\r\n\t\t\t\t\"domain\": {\r\n\t\t\t\t\t\"id\": \"default\"\r\n\t\t\t\t},\r\n\t\t\t\t\"name\": \"{{user_name}}\",\r\n\t\t\t\t\"password\": \"{{password}}\"\r\n\t\t\t}\r\n\t\t}\r\n\t},\r\n\t\"scope\": {\r\n     \"project\": {\r\n       \"domain\": {\r\n         \"id\": \"default\"\r\n       },\r\n       \"name\": \"{{tenant_name}}\"\r\n     }\r\n    }\r\n  }\r\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/v3/auth/tokens",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"v3",
+						"auth",
+						"tokens"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "CSO-job_status",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"// ToDo:",
+							"// - after that check for Deploy Configuration to Device PB-Abuse-SRX",
+							"//",
+							"",
+							"// To improve ",
+							"// - if provision job fails, retry them once or twice",
+							"// - if job failed, look again untill current time to see if it was restarted again. ( if above was not implemented)",
+							"// - if WAN_0 or only WAN_1 successfull ",
+							"",
+							"// JOB id of AUTO_SDWAN policy : 9687003b-aa33-4e52-bf06-ef29f69b0351",
+							"// JOB id of AUTO_AUTONAT policy : bd206b9b-de66-4997-88b9-ce75b558cee7",
+							"// JOb if of AUTO_FW policy : 8163de0c-ac09-42a6-94ad-ce6875d6fb0b",
+							"// JOB id of Service provisioning : 0c8e8633-a7f5-48be-8c35-796330723a95",
+							"// JOB id of DHCP update: 96fa84f8-a134-403f-83f5-b778f49a715a",
+							"// JOB id of Deleting site: a4642c01-374a-44cc-9f65-b0cfa9bb1f16",
+							"",
+							"/* ",
+							"1. Configure Spoke Site PBSC-Site-1 : d779d3d3-e030-4a9b-8710-20d365f737fc",
+							"2. Bootstrap Device PBSC-Site-1 : 0df01e91-d8eb-46df-9169-58d2fb9f23ab",
+							"3. Zero Touch Provisioning PBSC-Site-1 : 442a2ef1-7ae4-4024-ad59-8aad226c0b1e",
+							"4. Service Provisioning PBSC-Site-1 : f78ba28c-3c60-4b64-930c-2fed865833d2",
+							"   End: Nov 19, 2021, 4:00:54 PM",
+							"5. AUTO_SDWAN_policy_ : 485a15e3-4925-4c5e-b101-e084a9c0641b",
+							"    Start: Nov 19, 2021, 4:01:24 PM",
+							"    CHild Job with name PBSC-Site-1 must be sucessfull",
+							"    ie Task: Deployment Task/SDWAN policy deployment on device PBSC-Site-13/device_config_push",
+							"",
+							"   AUTO_NAT: 44db6462-2a47-44bb-9427-c00616ff2e6e",
+							"    Start Time: Nov 19, 2021, 4:02:36 PM",
+							"    MUST be sucessfull",
+							"",
+							"  AUTO_FW policy : 1f80253d-45cf-44bf-89fa-c81ef18657d3",
+							"    start Time: Nov 19, 2021, 4:07:29 PM",
+							"    Site PBSC-Site-1 must be sucessfull ",
+							"6. DHCP Update for WAN.[0,1] of SITE_NAME    ",
+							"*/",
+							"",
+							"var DEBUG = false;",
+							"",
+							"var jsonData = JSON.parse(responseBody);",
+							"var moment = require('moment');",
+							"var jsonData = jsonData.job;",
+							"var jobs = pm.collectionVariables.get(\"jobs\");",
+							"var end_time = moment.unix(jsonData.end_time).format('llll');",
+							"var five_min_ago = moment().subtract(5, 'minutes').unix();",
+							"var maxNumberOfTries = 10; // your max number of tries",
+							"var sleepBetweenTries = 300000; // your interval between attempts in milisecond seconds",
+							"nextRequest = null;",
+							"",
+							"// In case There is no site_name variable, get one from the job id. It should be DE00followed by digits.That is for Germany,",
+							"if(!pm.environment.get('site_name') && !pm.collectionVariables.get('site_name')){",
+							"    //console.log(\"Site name 1:\" ,site_name_from_job = jsonData.display_name.replace(/(DE00\\d.+)$/g, \" \"));",
+							"    //console.log(\"Site name 2:\" ,site_name_from_job2 = jsonData.display_name.replace(/.*(?=(DE00\\d.+$))/g, \"\"));",
+							"    pm.collectionVariables.set('site_name',jsonData.display_name.replace(/.*(?=(\\w{2}\\d{8}$))/g, \"\"));",
+							"    var site_name = pm.collectionVariables.get('site_name');",
+							"}",
+							"else {",
+							"    if(pm.environment.get('site_name')) { var site_name = pm.environment.get('site_name'); }",
+							"    else { var site_name = pm.collectionVariables.get('site_name'); }",
+							"}",
+							"",
+							"if (DEBUG && DEBUG === true) {",
+							"    // DEBUG - list all collection variables",
+							"    console.log('---------  DEBUG ----');",
+							"    if(jobs && JSON.parse(jobs).length > 0) {",
+							"        console.log('  Jobs length parse', JSON.parse(jobs).length);",
+							"    }",
+							"    //console.log(jsonData);",
+							"    function list_all() {",
+							"        const each = _.keys(pm.collectionVariables.toObject())",
+							"        _.each(each, (arrItem) => {",
+							"            console.log(`  ${arrItem} value: `, pm.collectionVariables.get(arrItem));",
+							"        })",
+							"    }",
+							"    console.log(`  ${list_all()}`);",
+							"    console.log('------  DEBUG-END ----');",
+							"}",
+							"",
+							"",
+							"status = jsonData.status;",
+							"uuid = jsonData.uuid;",
+							"// AUTO-SD-WAN job does not seems to have results property ",
+							"if (!jsonData.results) {",
+							"    results = 'undefined';",
+							"} else {",
+							"    results = jsonData.results;",
+							"}",
+							"",
+							"//console.log(`Status ... job: ${jsonData.display_name} is in ${status}`);",
+							"if (typeof jsonData['request_id'] != 'undefined') {",
+							"    pm.collectionVariables.set('x_request_id',jsonData['request_id']);",
+							"    //console.log(`- x-reuest-id : ${pm.collectionVariables.get('x_request_id')}`);",
+							"}",
+							"",
+							"if(jobs && JSON.parse(jobs).length > 0 ) {",
+							"    nextRequest = 'CSO-job_status';",
+							"}",
+							"else {",
+							"    if (pm.collectionVariables.get('AUTO_NAT') != true || pm.collectionVariables.get('AUTO_FW') != true || pm.collectionVariables.get('AUTO_SDWAN') != true) {",
+							"        /* This supposed to be check in case Site has been build more than 2 dasy ago and AUTO-* policy have always failed not to keep getting same policies over and over again forever",
+							"        But it does not work :-)",
+							"        Better way might be make a replica of the UUID array that is get the first time when .*AUTO+.* is searched for and compare it everytime to make sure we are not running it again.",
+							"        console.log(`AUTONAT NOT DONE !!!!`);",
+							"        console.log(`value1: ${moment().subtract(2, 'day').unix()}`);",
+							"        console.log(`value2: ${jsonData.end_time}`);",
+							"        console.log(`values: ${moment().subtract(2, 'day').unix() < jsonData.end_time}`);",
+							"        ",
+							"        if(moment().subtract(2, 'day').unix() > jsonData.end_time && !pm.collectionVariables.get('trial') && pm.collectionVariables.get('job_search_regex') != '.*AUTO+.*') {",
+							"            pm.collectionVariables.set(\"trial\", 1); ",
+							"            nextRequest = 'CSO-get_jobs';",
+							"            console.log('Not quite done, need to get more jobs ...');           ",
+							"        }",
+							"        //if(moment().subtract(2, 'day').unix() > jsonData.end_time && pm.collectionVariables.get('trial') > 0) {",
+							"        else {    ",
+							"            pm.collectionVariables.unset('trial'); ",
+							"            console.log('--------- ERROR:  job was not sucessfull .....');",
+							"            nextRequest = 'null';",
+							"            throw new Error(' --------- ERROR:  job was not sucessfull .....');",
+							"        }",
+							"        */",
+							"        nextRequest = 'CSO-get_jobs';",
+							"        console.log('Not quite done, need to get more jobs ...');           ",
+							"    }",
+							"}",
+							"",
+							"//",
+							"// IF Completly provisioned incdluing NAT, SD-WAN and FW",
+							"//",
+							"//if (pm.collectionVariables.get('AUTO_NAT') == true && pm.collectionVariables.get('AUTO_FW') == true && pm.collectionVariables.get('AUTO_SDWAN') == true && pm.collectionVariables.get('DHCP_WAN_0') == true && pm.collectionVariables.get('DHCP_WAN_1') == true) {",
+							"if (pm.collectionVariables.get('AUTO_NAT') == true && pm.collectionVariables.get('AUTO_FW') == true && pm.collectionVariables.get('AUTO_SDWAN') == true && (pm.collectionVariables.get('DHCP_WAN_0') != true || pm.collectionVariables.get('DHCP_WAN_1') != true)) {",
+							"    var auto_complete = true;",
+							"    pm.collectionVariables.set('job_search_start_time', pm.collectionVariables.get('service_provisioning_end_time'));",
+							"    pm.collectionVariables.set('job_search_regex','.*DHCP Update for WAN.[0,1] of ' + site_name);",
+							"    console.log('- Succed AUTO_NAT,AUTO_FW and AUTO_SDWAN .... next DHCP Update');",
+							"    //In case job finished more than 5 minutes ago, no need to wait unlike real-time deployemtn",
+							"    if (five_min_ago < jsonData.end_time) {",
+							"        setTimeout(function() {}, 120000); // sleep two minutes and search for Service provision job ID",
+							"    }",
+							"    nextRequest = 'CSO-get_jobs';",
+							"}",
+							"",
+							"if (pm.collectionVariables.get('DHCP_WAN_0') == true && pm.collectionVariables.get('DHCP_WAN_1') == true && pm.collectionVariables.get('AUTO_NAT') == true && pm.collectionVariables.get('AUTO_FW') == true && pm.collectionVariables.get('AUTO_SDWAN') == true) {",
+							"    if (pm.collectionVariables.get('DHCP_WAN_0') == true && pm.collectionVariables.get('DHCP_WAN_1') == true){ ",
+							"        var complete = true;",
+							"        console.log('Site sucessfully provisioned .... ');",
+							"        pm.test(` Site ${site_name} was sucessfully provisioned ....`, function () {",
+							"            pm.expect(complete).to.equal(true);",
+							"        });",
+							"        nextRequest = null;",
+							"    }",
+							"}",
+							"else {",
+							"    // ",
+							"    //.   IN-PROGRESS",
+							"    //",
+							"",
+							"    if (DEBUG && DEBUG === true) {",
+							"        console.log('  #DEBUG: IN-PROGRESS section');",
+							"    }",
+							"    ",
+							"    // If this is the first time in loop",
+							"    if ((status === 'unknown' || status === 'in-progress' || results.length === 0) && (!pm.collectionVariables.get(\"tries\"))) { ",
+							"        pm.collectionVariables.set(\"tries\", 1); ",
+							"        console.log('Setting variable tries to 1');",
+							"    }",
+							"    // handling extremly long jobs untill tey eventually time out by CSO and become failed.",
+							"    if ((status === 'unknown' || status === 'in-progress' || results.length === 0) && (pm.collectionVariables.get(\"tries\") === maxNumberOfTries)) {",
+							"        pm.test.skip(`Job ${jsonData.display_name} still in ${status} ...  reseting tries `);",
+							"        console.log(`Job ${jsonData.display_name} still in ${status} ... reseting tries`); ",
+							"        console.log(`Currently on trial number: ${pm.collectionVariables.get('tries')} out of ${maxNumberOfTries} ... waiting 10 minutes `); ",
+							"        pm.collectionVariables.set(\"tries\", 1);",
+							"        setTimeout(function() {}, 60000*10); // sleep TEN minute's and search for job ID. CSO will time out the JOB eventually",
+							"        nextRequest = 'CSO-job_status';",
+							"        //postman.setNextRequest(pm.info.requestId); // simple way of repeating same as above",
+							"    }",
+							"    // If status is in progress or unknnown",
+							"    if ((status === 'unknown' || status === 'in-progress' || results.length === 0) && (pm.collectionVariables.get(\"tries\") < maxNumberOfTries)) {",
+							"        pm.test.skip(`Job ${jsonData.display_name} still in ${status} ...  waiting another ${sleepBetweenTries/60000} minutes `);",
+							"        console.log(`Job ${jsonData.display_name} still in ${status} ... `); ",
+							"        console.log(`Currently on trial number: ${pm.collectionVariables.get('tries')} out of ${maxNumberOfTries} ... waiting another ${sleepBetweenTries/60000} minutes `); ",
+							"        tries = parseInt(pm.collectionVariables.get(\"tries\"), 10);",
+							"        pm.collectionVariables.set(\"tries\", tries + 1);",
+							"        setTimeout(function() {}, sleepBetweenTries);",
+							"        nextRequest = 'CSO-job_status';",
+							"        //postman.setNextRequest(pm.info.requestId); // simple way of repeating same as above",
+							"    } ",
+							"    else {",
+							"",
+							"        // ",
+							"        //.   SUCCESS",
+							"        //",
+							"",
+							"        pm.collectionVariables.unset(\"tries\");   ",
+							"        job_name = jsonData.display_name.replace(/_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{9,109}$/g, \" \");",
+							"        ",
+							"        // DEBUG",
+							"        if (DEBUG && DEBUG === true) {",
+							"            console.log('  #DEBUG: SUCCESS section');",
+							"            console.log(`  #DEBUG: Processing job with name(corrected): ${job_name} ....`);",
+							"            console.log(`  #DEBUG: Processing job with name(plain): ${jsonData.display_name} ....`);",
+							"        }",
+							"        if (status === 'success') {",
+							"            // Check if first step druing provisioning ' Configure Spoke site' has started and if so, get time.",
+							"            if (jsonData.display_name.includes('Configure Spoke Site ' + site_name)) {",
+							"                //pm.collectionVariables.set(site_name + '-configure',true);",
+							"                pm.collectionVariables.set('job_search_start_time', jsonData.end_time);",
+							"                pm.collectionVariables.set('job_search_regex','Bootstrap Device ' + site_name);",
+							"                console.log(' - Succed Configure ... next Bootstrap');",
+							"                //In case job finished more than 5 minutes ago, no need to wait unlike real-time deployemtn",
+							"                if (five_min_ago < jsonData.end_time) {",
+							"                    setTimeout(function() {}, 60000); // sleep one minute and search for Service provision job ID",
+							"                }",
+							"                nextRequest = 'CSO-get_jobs';",
+							"            }",
+							"            ",
+							"            if (jsonData.display_name.includes('Bootstrap Device ' + site_name)) {",
+							"                pm.collectionVariables.set('job_search_start_time', jsonData.end_time-30);",
+							"                pm.collectionVariables.set('job_search_regex','Zero Touch Provisioning ' + site_name);",
+							"                console.log(' - Succed Bootstrap ... next Zero Touch');",
+							"                //In case job finished more than 5 minutes ago, no need to wait unlike real-time deployemtn",
+							"                if (five_min_ago < jsonData.end_time) {",
+							"                    setTimeout(function() {}, 60000); // sleep one minute and search for Service provision job ID",
+							"                }",
+							"                nextRequest = 'CSO-get_jobs';",
+							"            }",
+							"            if (jsonData.display_name.includes('Zero Touch Provisioning ' + site_name)) {",
+							"                pm.collectionVariables.set('job_search_start_time', jsonData.end_time-30);",
+							"                pm.collectionVariables.set('job_search_regex','Service Provisioning ' + site_name);",
+							"                console.log(' - Succed Zero Touch ... next Service Provisioning');",
+							"",
+							"                //In case job finished more than 5 minutes ago, no need to wait unlike real-time deployemtn",
+							"                if (five_min_ago < jsonData.end_time) {",
+							"                    setTimeout(function() {}, 60000); // sleep one minute and search for Service provision job ID",
+							"                }",
+							"                nextRequest = 'CSO-get_jobs';",
+							"            }",
+							"            ",
+							"            if (jsonData.display_name.includes('Service Provisioning ' + site_name)) {",
+							"                pm.collectionVariables.set('job_search_start_time', jsonData.end_time-30);",
+							"                pm.collectionVariables.set('service_provisioning_end_time', jsonData.end_time-30);",
+							"                pm.collectionVariables.set('job_search_regex','.*AUTO+.*');",
+							"                console.log(' - Succed Service Provisioning ... next looking for AUTO jobs');",
+							"                //In case job finished more than 5 minutes ago, no need to wait unlike real-time deployemtn",
+							"                if (five_min_ago < jsonData.end_time) {",
+							"                    setTimeout(function() {}, 120000); // sleep two minutes and search for Service provision job ID",
+							"                }",
+							"                nextRequest = 'CSO-get_jobs';",
+							"            }",
+							"            if (jsonData.display_name.includes('AUTONAT')) {",
+							"                console.log('AUTONAT sucessfull ...');",
+							"                pm.collectionVariables.set('AUTO_NAT', true);",
+							"                nextRequest = 'CSO-job_status';",
+							"            }",
+							"            if (jsonData.display_name.includes('AUTO') && jobs.lenght > 0) {",
+							"                nextRequest = 'CSO-job_status';",
+							"            }",
+							"            if (jsonData.display_name.includes('DHCP Update for WAN_0 of ' + site_name)) {",
+							"                console.log('DHCP_WAN_0 sucessfull ...');",
+							"                pm.collectionVariables.set('DHCP_WAN_0', true);",
+							"                nextRequest = 'CSO-job_status';",
+							"            }",
+							"            if (jsonData.display_name.includes('DHCP Update for WAN_1 of ' + site_name)) {",
+							"                console.log('DHCP_WAN_1 sucessfull ...');",
+							"                pm.collectionVariables.set('DHCP_WAN_1', true);",
+							"                nextRequest = 'CSO-job_status';",
+							"            }",
+							"        }",
+							"",
+							"        //",
+							"        // Repeat of service provisioning in case of single failure",
+							"        //",
+							"        if (status === 'failed' && jsonData.display_name.includes('Configure Spoke Site ' + site_name)) {",
+							"            if (!pm.collectionVariables.get(\"tries\")) { ",
+							"                pm.collectionVariables.set(\"tries\", 1); ",
+							"            }",
+							"            else {",
+							"                tries = parseInt(pm.collectionVariables.get(\"tries\"), 10);",
+							"                pm.collectionVariables.set(\"tries\", tries + 1);",
+							"                if (pm.collectionVariables.get(\"tries\") < 2) {",
+							"                    console.log(' - Failed Service Provisioning ... trying again');",
+							"                    setTimeout(function() {}, 60000); // sleep one minute and search for Service provision job ID",
+							"                    nextRequest = 'CSO-job_retry';",
+							"                }",
+							"                else {",
+							"                    console.log(' - Reapeded Failure Service Provisioning ... aborting ');",
+							"                    pm.collectionVariables.unset(\"tries\");",
+							"                    nextRequest = null;",
+							"                }",
+							"            }",
+							"        }",
+							"        ",
+							"        // ",
+							"        //.   DRILL DOWN  IN TO INDIVIDUAL SUB-TASKs",
+							"        //",
+							"",
+							"        if (Array.isArray(jsonData.summary.task_tree.children)) {",
+							"            task_count = jsonData.summary.task_count;",
+							"            fail_count = jsonData.summary.fail_count;",
+							"            date = moment.unix(jsonData.end_time).format('llll');",
+							"            //console.log(`${jsonData.display_name.substring(0,15)} job has: ${status}, Job ID: ${uuid} `);",
+							"            console.log(`${job_name} job has: ${status}, Job ID: ${uuid} `);",
+							"            if (fail_count != 0){",
+							"                console.log(`- It had ${task_count} child-jobs from which ${fail_count - 1} had failed. Job End time: ${end_time}`);",
+							"            }",
+							"            else {",
+							"                console.log(`- It had ${task_count} child-jobs and none has failed. Job End time: ${date}`);",
+							"            }",
+							"            ",
+							"            jsonData.summary.task_tree.children.forEach(function (child) {",
+							"                child_name = child.path.replace(`${uuid}/`, '');",
+							"                readable_name = child_name.replace(/\\//g, \" - \");",
+							"                console.log(`${readable_name} .... ${child.task_status} `);",
+							"                if (child.task_status === 'in-progress') {",
+							"                    pm.test.skip(`--- ${readable_name} still in progress ... `);",
+							"                }",
+							"                else  {",
+							"                    if (child.task_status === 'failed') { console.log(`--- ${readable_name} ... has failed `); }",
+							"                    // Child Job Test",
+							"                    pm.test(`--- ${readable_name} ... has ${child.task_status}`, function () {",
+							"                        pm.expect(child.task_status).to.equal(\"success\");",
+							"                    });",
+							"                }",
+							"",
+							"                if (Array.isArray(child.children)) {",
+							"                    child.children.forEach(function (sub_child) {",
+							"                        // Removing job ID from the string",
+							"                        sub_child_name = sub_child.path.replace(`${uuid}/`, '');",
+							"                        readable_name = sub_child_name.replace(/\\//g, \" - \");",
+							"                        sub_child_name = sub_child_name.replace(`${child_name}/`,'');",
+							"                        if (sub_child.task_status === 'in-progress') {",
+							"                            pm.test.skip('Job still in progress ... ');",
+							"                        }",
+							"                        else  {",
+							"                            // We are here interested only in specific site not all sites",
+							"                            if (job_name.includes('AUTO_SDWAN_policy')) { site = new RegExp(\".*\" + site_name+\"$\"); }",
+							"                            else if (job_name.includes('AUTO_FW_policy')) { site = new RegExp(site_name+\"$\"); }",
+							"                            else { site = new RegExp(site_name); }",
+							"",
+							"                            // DEBUG",
+							"                            if (DEBUG && DEBUG === true) {",
+							"                                if (sub_child.task_status === 'failed') { console.log(`------> FAILED Sub-child job: ${sub_child_name.replace(/_.*/g,'')}`); }",
+							"                                if (sub_child.task_status === 'success') { ",
+							"                                    console.log(`------> FAILED Sub-child job: ${sub_child_name.replace(/_.*/g,'')}`);",
+							"                                    console.log(`  #DEBUG: Site: ${site}`);",
+							"                                    console.log(`  #DEBUG: If sub_child_name.replace(/_.*/g,'').match(site): ${sub_child_name.replace(/_.*/g,'').match(site)}`)",
+							"                                }",
+							"                                //console.log(`Site name: ${pm.collectionVariables.get('site_name')}`);",
+							"                                //console.log(`If sub_child_name.replace(/_.*/g,'').match(site): ${sub_child_name.replace(/_.*/g,'').match(site)}`)",
+							"                            }",
+							"",
+							"                            if (sub_child_name.replace(/_.*/g,'').match(site) && sub_child.task_status == 'success') {",
+							"                                // Child Job Test",
+							"                                //------> Sub-Task: SDWAN policy deployment on device PBSC-Site-1 ... was success",
+							"                                pm.test(`------> Sub-Task: ${sub_child_name.replace(/_.*/g,'')} ... was success`, function () {",
+							"                                    pm.expect(sub_child.task_status).to.equal(\"success\");",
+							"                                });",
+							"                                if (job_name.includes('AUTO_FW_policy')) {",
+							"                                    pm.collectionVariables.set('AUTO_FW', true);",
+							"                                    console.log('AUTO_FW_policy sucessfull ...');",
+							"                                }",
+							"                                if (job_name.includes('AUTO_SDWAN_policy')) {",
+							"                                    pm.collectionVariables.set('AUTO_SDWAN', true);",
+							"                                    console.log('AUTO_SDWAN_policy sucessfull ...');",
+							"                                }                        ",
+							"                            }",
+							"                        }",
+							"                    })",
+							"                } //End of sub_child loop",
+							"            })",
+							"        } // End of job children loop",
+							"",
+							"        // Main Policy Test     ",
+							"        if (( job_name.includes('AUTO_FW_policy') && pm.collectionVariables.get('AUTO_FW') == true) || (job_name.includes('AUTO_SDWAN_policy') && pm.collectionVariables.get('AUTO_SDWAN') == true )) { status = \"success\"; }",
+							"        pm.test(`${job_name} ... was ${status}`, function () {",
+							"        //pm.test(`${jsonData.display_name} ... was success`, function () {",
+							"            pm.expect(status).to.equal(\"success\");",
+							"        });",
+							"",
+							"    }",
+							"} //End of condition checking if site has been already provisioned",
+							"",
+							"// In Case nay of AUTO JOb's fail ",
+							"if ( (jobs && JSON.parse(jobs).length === 0) && (pm.collectionVariables.get('AUTO_NAT') != true || pm.collectionVariables.get('AUTO_FW') != true || pm.collectionVariables.get('AUTO_SDWAN') != true || pm.collectionVariables.get('DHCP_WAN_0') != true || pm.collectionVariables.get('DHCP_WAN_1') != true) && nextRequest === null ) {",
+							"    console.log('Site NOT sucessfully provisioned .... please review');",
+							"    pm.test(` Site ${site_name} was NOT sucessfully provisioned ....`, function () {",
+							"        pm.expect(complete).to.equal(true);",
+							"    });      ",
+							"}",
+							"else { // IF. AUTO just finished sucessfully, start looking for DHCP for WAN_0 and WAN_1",
+							"    if (pm.collectionVariables.get('AUTO_NAT') == true && pm.collectionVariables.get('AUTO_FW') == true && pm.collectionVariables.get('AUTO_SDWAN') == true && auto_complete != true && (pm.collectionVariables.get('DHCP_WAN_0') != true || pm.collectionVariables.get('DHCP_WAN_1') != true)) {",
+							"        pm.collectionVariables.set('job_search_start_time', pm.collectionVariables.get('service_provisioning_end_time'));",
+							"        pm.collectionVariables.set('job_search_regex','.*DHCP Update for WAN.[0,1] of ' + site_name);",
+							"        console.log('Site AUTO_NAT,AUTO_FW and AUTO_SDWAN sucessfully provisioned .... next checking DHCP Update');",
+							"        //In case job finished more than 5 minutes ago, no need to wait unlike real-time deployemtn",
+							"        if (five_min_ago < jsonData.end_time) {",
+							"            setTimeout(function() {}, 120000); // sleep two minutes and search for Service provision job ID",
+							"        }",
+							"        nextRequest = 'CSO-get_jobs';",
+							"    }",
+							"    if ((pm.collectionVariables.get('DHCP_WAN_0') == true || pm.collectionVariables.get('DHCP_WAN_1') == true) && pm.collectionVariables.get('AUTO_NAT') == true && pm.collectionVariables.get('AUTO_FW') == true && pm.collectionVariables.get('AUTO_SDWAN') == true) {",
+							"        // If only WAN_0 got DHCP update and there are not more jobs untill now, all done",
+							"        if ((jobs && JSON.parse(jobs).length === 0) && pm.collectionVariables.get('DHCP_WAN_0') == true && pm.collectionVariables.get('DHCP_WAN_1') != true ){",
+							"            var complete = true;",
+							"            console.log('Site provisioned without WAN_1 ....');",
+							"            pm.test(` Site ${site_name} was provisioned without WAN_1 ....`, function () {",
+							"                pm.expect(complete).to.equal(true);",
+							"            });",
+							"            nextRequest = null; ",
+							"        }",
+							"        // If only WAN_1 got DHCP update and there are not more jobs untill now, all done",
+							"        if ((jobs && JSON.parse(jobs).length === 0) && pm.collectionVariables.get('DHCP_WAN_0') != true && pm.collectionVariables.get('DHCP_WAN_1') == true ){",
+							"            var complete = true;",
+							"            console.log('Site provisioned without WAN_0 .... ');",
+							"            pm.test(` Site ${site_name} was provisioned without WAN_0 ....`, function () {",
+							"                pm.expect(complete).to.equal(true);",
+							"            });",
+							"            nextRequest = null;",
+							"        }",
+							"        // If WAN_0 and WAN_1 got DHCP update , all done",
+							"        if (pm.collectionVariables.get('DHCP_WAN_0') == true && pm.collectionVariables.get('DHCP_WAN_1') == true){ ",
+							"            var complete = true;",
+							"            console.log('Site sucessfully provisioned .... ');",
+							"            pm.test(` Site ${site_name} was sucessfully provisioned ....`, function () {",
+							"                pm.expect(complete).to.equal(true);",
+							"            });",
+							"            nextRequest = null; ",
+							"        }",
+							"    }",
+							"}",
+							"",
+							"console.log(`setting next request ... ${nextRequest}`);",
+							"postman.setNextRequest(nextRequest);"
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"console.log('-------------------- JOB STATUS --------------------------------------');",
+							"var jobs = pm.collectionVariables.get(\"jobs\");",
+							"var tries = pm.collectionVariables.get(\"tries\");",
+							"var env_job_id = pm.environment.get('job_id');",
+							"if (!pm.environment.get('job_id') && !jobs && pm.collectionVariables.get('job_id')){",
+							"    console.log(' --------- ERROR:  Please provide job id to view .....');",
+							"    throw new Error(' --------- ERROR:  Please provide job id to view .....');",
+							"}",
+							"else {",
+							"    console.log('Enviroment job:', env_job_id);",
+							"}",
+							"// IF the list job is defined and is not empty, take a first value and assign it to variable job_id",
+							"// List job gets populated in get_jobs function that searches for all jobs in given time frame.",
+							"",
+							"//filter trough jobs only if they are not in progress. IE, if only one AUTO finished and we are waiting for the few others, tries will be defined",
+							"if(jobs && JSON.parse(jobs).length > 0 && !tries) {",
+							"    jobs =JSON.parse(jobs);",
+							"    var currentjob = jobs.shift();",
+							"    //console.log('currentjob:',currentjob);",
+							"    //console.log('jobs:',jobs);",
+							"",
+							"    // Unsetting Enviroment variable in case it is define as it beats collection variable",
+							"    if (env_job_id == true || (env_job_id && env_job_id.length > 0)) {",
+							"        //postman.clearEnvironmentVariable('job_id');",
+							"        pm.environment.unset('job_id');",
+							"        //pm.environment.set('job_id','');",
+							"        console.log('Detected Enviroment variable job_id also used in collectionVariables, unseting env ...')",
+							"    }",
+							"",
+							"    if (typeof currentjob !== 'undefined') {pm.collectionVariables.set(\"job_id\", currentjob); }",
+							"    pm.collectionVariables.set(\"jobs\", JSON.stringify(jobs));",
+							"}",
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "apikey",
+					"apikey": [
+						{
+							"key": "value",
+							"value": "{{token}}",
+							"type": "string"
+						},
+						{
+							"key": "key",
+							"value": "x-auth-token",
+							"type": "string"
+						},
+						{
+							"key": "in",
+							"value": "header",
+							"type": "string"
+						}
+					]
+				},
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/job-service/job/:job_id",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"job-service",
+						"job",
+						":job_id"
+					],
+					"variable": [
+						{
+							"key": "job_id",
+							"value": "{{job_id}}"
+						}
+					]
+				}
+			},
+			"response": [
+				{
+					"name": "CSO-job_status",
+					"originalRequest": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/job-service/job/:job_id",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"job-service",
+								"job",
+								":job_id"
+							],
+							"variable": [
+								{
+									"key": "job_id",
+									"value": "{{job_id}}"
+								}
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Date",
+							"value": "Fri, 19 Nov 2021 22:07:40 GMT"
+						},
+						{
+							"key": "Content-Type",
+							"value": "application/json"
+						},
+						{
+							"key": "Content-Length",
+							"value": "24591"
+						},
+						{
+							"key": "Connection",
+							"value": "keep-alive"
+						},
+						{
+							"key": "Set-Cookie",
+							"value": "AWSALB=7++suAxe29rwb3e1A0uSvtmi4Dfj/6J2aPsdN8y+0u5bu39b4YdO3GFRV8mxiRY+1q6Y/yxrmHadNH6SAOFJbpGt1P2+ZxWA4OwgXrF4xrMwBX9wHrg9MAcRWSKj; Expires=Fri, 26 Nov 2021 22:07:40 GMT; Path=/"
+						},
+						{
+							"key": "Set-Cookie",
+							"value": "AWSALBCORS=7++suAxe29rwb3e1A0uSvtmi4Dfj/6J2aPsdN8y+0u5bu39b4YdO3GFRV8mxiRY+1q6Y/yxrmHadNH6SAOFJbpGt1P2+ZxWA4OwgXrF4xrMwBX9wHrg9MAcRWSKj; Expires=Fri, 26 Nov 2021 22:07:40 GMT; Path=/; SameSite=None; Secure"
+						},
+						{
+							"key": "Server",
+							"value": "nginx/1.15.10"
+						},
+						{
+							"key": "Etag",
+							"value": "\"2021-11-19T22:07:29.439989\""
+						},
+						{
+							"key": "X-Request-Id",
+							"value": "9986c4aa3c5c0f01ae70f421906dfa23,lgYU"
+						},
+						{
+							"key": "Strict-Transport-Security",
+							"value": "max-age=15724800"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"job\": {\n        \"status\": \"failed\",\n        \"parent_uuid\": \"d60f49d4-3104-4a6a-a3f7-bde2ee392ba6\",\n        \"parent_type\": \"project\",\n        \"start_time\": 1637359304,\n        \"job_type\": \"csp.policy-mgmt.policy-deployments.deploy.FW\",\n        \"hidden_flag\": false,\n        \"perms2\": {\n            \"owner\": \"d60f49d431044a6aa3f7bde2ee392ba6\",\n            \"owner_access\": 7,\n            \"global_access\": 0,\n            \"share\": [\n                {\n                    \"tenant_access\": 7,\n                    \"tenant\": \"c22a09669f334aec983ddf4853aa05e6\"\n                }\n            ]\n        },\n        \"task_count\": 154,\n        \"display_name\": \"AUTO_FW_policy_48e3d556-4984-11ec-8675-7af90cc45604\",\n        \"name\": \"AUTO_FW_policy_48e3d556-4984-11ec-8675-7af90cc45604\",\n        \"category\": \"simple\",\n        \"fq_name\": [\n            \"default-domain\",\n            \"OpenLab\",\n            \"AUTO_FW_policy_48e3d556-4984-11ec-8675-7af90cc45604\"\n        ],\n        \"uuid\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3\",\n        \"monitor_flag\": true,\n        \"uri\": \"/job-service/job/1f80253d-45cf-44bf-89fa-c81ef18657d3\",\n        \"convert_timeout\": 0,\n        \"summary\": {\n            \"fail_count\": 88,\n            \"success_count\": 67,\n            \"task_count\": 154,\n            \"task_tree\": {\n                \"child_task_status\": {\n                    \"failed\": 1,\n                    \"success\": 3\n                },\n                \"task_status\": \"failed\",\n                \"children\": [\n                    {\n                        \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Resolving Endpoints\",\n                        \"child_task_status\": {},\n                        \"task_status\": \"success\",\n                        \"children\": []\n                    },\n                    {\n                        \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Policy Diff Task\",\n                        \"child_task_status\": {},\n                        \"task_status\": \"success\",\n                        \"children\": []\n                    },\n                    {\n                        \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task\",\n                        \"child_task_status\": {\n                            \"failed\": 87,\n                            \"success\": 64\n                        },\n                        \"task_status\": \"failed\",\n                        \"children\": [\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P6-SITE-102_1\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P4-SITE-60_2\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P3-SITE-39_3\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P4-SITE-54_4\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P4-SITE-49_5\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P1-E-HUB-3-SRX4200_6\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/PBSC-Site-21_7\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P6-SITE-95_8\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/PBSC-Site-8_9\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P2-SITE-14_10\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P2-SITE-19_11\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/PC-vSRX-001_12\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P5-SITE-71_13\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P3-SITE-36_14\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P6-SITE-109_15\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P1-E-HUB-1-SRX4200_16\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P5-SITE-68_17\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P3-SITE-26_18\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P3-SITE-38_19\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/PBSC-Site-19_20\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P2-SITE-17_21\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P4-SITE-50_22\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P2-SITE-12_23\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P3-SITE-34_24\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P5-SITE-69_25\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P5-SITE-73_26\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P3-SITE-21_27\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P5-SITE-78_28\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P6-SITE-92_29\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/PBSC-Site-10_30\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P4-SITE-55_31\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P3-SITE-35_32\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P3-SITE-29_33\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P6-SITE-106_34\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P2-SITE-5_35\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/PBSC-Site-7_36\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/STE-113-SRX320_37\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/S25428_38\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/PBSC-Site-11_39\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P5-SITE-87_40\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/PBSC-Site-13_41\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/PBSC-Site-14_42\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P2-SITE-11_43\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P2-SITE-13_44\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P4-SITE-48_45\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P5-SITE-72_46\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P4-SITE-52_47\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P6-SITE-89_48\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P3-SITE-25_49\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P3-SITE-40_50\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P3-SITE-28_51\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/site33_52\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P5-SITE-77_53\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P2-SITE-9_54\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P5-SITE-63_55\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P4-SITE-57_56\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/PBSC-Site-9_57\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P6-SITE-103_58\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P6-SITE-91_59\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P5-SITE-64_60\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P3-SITE-33_61\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/PB-Site15_62\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/site3LTE_63\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P5-SITE-70_64\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/PBSC-Site-12_65\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/PBSC-Site-3_66\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/PBSC-Site-4_67\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P6-SITE-98_68\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/STE-116-SRX320_69\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P5-SITE-66_70\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P3-SITE-23_71\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P4-SITE-47_72\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/STE-115-SRX320_73\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P2-SITE-4_74\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/S25432_75\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/STE-114-SRX320_76\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P4-SITE-62_77\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P3-SITE-22_78\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P5-SITE-82_79\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/PBSC-Site-20_80\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P2-SITE-10_81\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P6-SITE-88_82\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/PBSC-Site-6_83\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P2-SITE-3_84\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/site0_85\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P1-E-HUB-4-SRX4200_86\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P3-SITE-41_87\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P6-SITE-101_88\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/PBSC-Site-2_89\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P3-SITE-27_90\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/PB-Site-11_91\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P1-E-HUB-2-SRX4200_92\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P5-SITE-81_93\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P3-SITE-32_94\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P5-SITE-83_95\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P6-SITE-105_96\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P4-SITE-61_97\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P4-SITE-53_98\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P2-SITE-15_99\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P6-SITE-110_100\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/PBSC-Site-22_101\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/PBSC-Site-15_102\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P3-SITE-44_103\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P6-SITE-107_104\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/S25426_105\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P4-SITE-56_106\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/PB-Site-9_107\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P2-SITE-6_108\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P2-SITE-16_109\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P3-SITE-43_110\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/site333PPPoA_111\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P4-SITE-51_112\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P2-SITE-2_113\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P6-SITE-108_114\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P2-SITE-7_115\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P5-SITE-67_116\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P2-SITE-1_117\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P4-SITE-46_118\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P5-SITE-80_119\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P5-SITE-76_120\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P3-SITE-30_121\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P3-SITE-31_122\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/PBSC-Site-1_123\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P6-SITE-94_124\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P6-SITE-90_125\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/PB-Site16_126\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P4-SITE-59_127\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P5-SITE-85_128\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P6-SITE-104_129\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P5-SITE-84_130\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/STE-112-SRX320_131\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P2-SITE-8_132\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P5-SITE-86_133\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P5-SITE-74_134\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P3-SITE-24_135\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/PB-Site17_136\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/S25433_137\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P6-SITE-97_138\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P3-SITE-42_139\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P4-SITE-58_140\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/PBSC-Site-17_141\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/PBSC-Site-5_142\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P2-SITE-20_143\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P3-SITE-37_144\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P2-SITE-18_145\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P5-SITE-79_146\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P5-SITE-75_147\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/STE-111-SRX320_148\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/PBSC-Site-18_149\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"success\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P4-SITE-45_150\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            },\n                            {\n                                \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Task/D1P5-SITE-65_151\",\n                                \"child_task_status\": {},\n                                \"task_status\": \"failed\",\n                                \"children\": []\n                            }\n                        ]\n                    },\n                    {\n                        \"path\": \"1f80253d-45cf-44bf-89fa-c81ef18657d3/Deployment Completion\",\n                        \"child_task_status\": {},\n                        \"task_status\": \"success\",\n                        \"children\": []\n                    }\n                ]\n            }\n        },\n        \"id_perms\": {\n            \"enable\": true,\n            \"uuid\": {\n                \"uuid_mslong\": 2269855157289174207,\n                \"uuid_lslong\": 9942479162600478675\n            },\n            \"created\": \"2021-11-19T22:01:44.959197\",\n            \"description\": null,\n            \"creator\": \"admin\",\n            \"user_visible\": true,\n            \"last_modified\": \"2021-11-19T22:07:29.439989\",\n            \"modifier\": \"admin\",\n            \"permissions\": {\n                \"owner\": \"admin\",\n                \"owner_access\": 7,\n                \"other_access\": 7,\n                \"group\": \"admin\",\n                \"group_access\": 7\n            }\n        },\n        \"end_time\": 1637359649,\n        \"request_id\": \"deploy_3e5fcb76-4984-11ec-844a-a697ec056069\",\n        \"percentage\": 100,\n        \"parent_uri\": \"/job-service/project/d60f49d4-3104-4a6a-a3f7-bde2ee392ba6\",\n        \"job_timeout\": 120\n    }\n}"
+				}
+			]
+		},
+		{
+			"name": "CSO-job_retry",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"console.log('-------------------- JOB RETRY --------------------------------------');",
+							"console.log(`Retry of job ${job_id} name: ${job_search_regex}`);",
+							"var jsonData = JSON.parse(responseBody);",
+							"nextRequest = null;",
+							"",
+							"pm.test(\"Status code is 200\", function() {",
+							"  pm.expect(pm.response.code).to.equal(200);",
+							"});",
+							"if (pm.response.code == 200 && jsonData.output.result === 'success') {",
+							"    pm.collectionVariables.set(\"job_id\", jsonData.output.job_id)",
+							"    console.log(`job: ${pm.collectionVariables.get('job_id')}`);",
+							"    console.log(`Result of retry: ${jsonData.output.result}`);",
+							"    nextRequest = 'CSO-job_status'",
+							"}",
+							"console.log(`setting next request ... ${nextRequest}`);",
+							"postman.setNextRequest(nextRequest);",
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "apikey",
+					"apikey": [
+						{
+							"key": "value",
+							"value": "{{token}}",
+							"type": "string"
+						},
+						{
+							"key": "key",
+							"value": "x-auth-token",
+							"type": "string"
+						},
+						{
+							"key": "in",
+							"value": "header",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "x-auth-token",
+						"type": "text",
+						"value": "{{token}}",
+						"disabled": true
+					},
+					{
+						"key": "Content-Type",
+						"type": "text",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"input\": {\r\n        \"job_uuid\": \"{{job_id}}\"\r\n    }\r\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/job-service/retry-job",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"job-service",
+						"retry-job"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "CSO-get_jobs",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"var DEBUG = false;",
+							"",
+							"var jsonData = JSON.parse(responseBody);",
+							"var jobs = [];",
+							"var success_count = 0;",
+							"var failed_count = 0;",
+							"nextRequest = null;",
+							"",
+							"//console.log(`Lenght of total value: ${jsonData.total.length}`);",
+							"",
+							"if (pm.response.code == 200 && jsonData.total >= 1) {",
+							"",
+							"    // Compare size of return items in response body with search size provided in request body",
+							"    var req_data = JSON.parse(request.data);",
+							"    //console.log('Request size: ',req_data.size);",
+							"    if (req_data.size >= jsonData.total){",
+							"        var jobitems = jsonData.total;",
+							"    }",
+							"    else { var jobitems = req_data.size; }",
+							"    /*",
+							"    // In case there are hundrets of jobs being return, limit it to number bellow",
+							"    if (jsonData.total >= 12){",
+							"        jobitems = 12;",
+							"        console.log(`Job search return  ${jsonData.total} results, more than max allowed 12`);",
+							"    }",
+							"    else {",
+							"        var jobitems = jsonData.total;",
+							"    }",
+							"    */",
+							"    ",
+							"    // Debug to view inside of loop in case of troubleshooting",
+							"    //console.log(`Lenght of job array ${jobitems}`);",
+							"",
+							"    for (var i = 0; i < jobitems; i++) {",
+							"        pm.collectionVariables.unset(\"tries\"); ",
+							"        // assign given i job to item",
+							"        var item = jsonData.job[i];",
+							"        //assign variables from each job",
+							"        status = item.status;",
+							"        name = item.display_name.replace(/_/g,' ');",
+							"        task_count = item.task_count;",
+							"        if(item.summary) {",
+							"            if (item.summary.fail_count && item.summary.fail_count.length > 0) { ",
+							"                fail_count = item.summary.fail_count; ",
+							"            }",
+							"            else {",
+							"            fail_count = 0;",
+							"            }",
+							"        } ",
+							"        else {",
+							"            fail_count = 0;",
+							"        }",
+							"        uuid = item.uuid;",
+							"        // Parent Job Test",
+							"        if (status === 'in-progress') {",
+							"            pm.test.skip(`Job ${name}still in progress ... `);  ",
+							"            jobs.push(item.uuid);",
+							"            nextRequest = \"CSO-job_status\";",
+							"        }    ",
+							"        else {",
+							"            jobs.push(item.uuid);",
+							"            if (status === 'success') { success_count = success_count + 1; }",
+							"            if (status === 'failed') { failed_count = failed_count + 1; }",
+							"            ",
+							"            nextRequest = \"CSO-job_status\";",
+							"        }",
+							"        // Child_size is count of pass and failed children job",
+							"        //child_size = item.summary.task_tree.child_task_status.failed + item.summary.task_tree.child_task_status.success;",
+							"        if (DEBUG && DEBUG === true) { ",
+							"            pm.test.skip(`Found job ${name} ...  `); ",
+							"            console.log(`Found ${item.status} Job ${name} ...`);",
+							"            //console.log(`Job ${name} has: ${item.status}`);",
+							"            //console.log(`- Job ID: ${item.uuid}`);",
+							"            //console.log(`- It had ${item.task_count} child-jobs from which ${fail_count - 1} had failed`);",
+							"        }",
+							"        ",
+							"        //in case of service provisioning fails",
+							"        if (name.toLowerCase().includes('service provisioning')){",
+							"            pm.collectionVariables.set('job_id',item.uuid);",
+							"            console.log(`job_id set to: ${pm.collectionVariables.get('job_id')}`);",
+							"            if (typeof item['request_id'] != 'undefined') {",
+							"                pm.collectionVariables.set('x_request_id',item['request_id']);",
+							"                console.log(`Env x-reuest-id set to: ${pm.collectionVariables.get('x_request_id')}`);",
+							"            }",
+							"            if (typeof item.id_perms['created'] != 'undefined') {",
+							"                pm.collectionVariables.set('request_id_date',item.id_perms.created.substring(0,10));",
+							"                console.log(`Env request_id_date: ${pm.collectionVariables.get('request_id_date')}`);",
+							"            }",
+							"        }",
+							"    }",
+							"    if (failed_count === 0) { failed_count = 'no'; }",
+							"    pm.test.skip(`Found ${success_count} success and ${failed_count} failed job in search querry ...  `); ",
+							"    ",
+							"    console.log('Found job ID\\'s:\\n',jobs);",
+							"    pm.collectionVariables.set('jobs',JSON.stringify(jobs));  ",
+							"}",
+							"   ",
+							"",
+							"// In case device has not been detected and Bootstrap did not started",
+							"if (pm.response.code == 200 && jsonData.total == 0 && pm.collectionVariables.get('job_search_regex','Bootstrap Device ' + pm.environment.get('site_name'))) {",
+							"    console.log(`Site ${pm.environment.get('site_name')} has not been detected ${tries}x wating 3 minutes and trying again ...`);",
+							"    setTimeout(function() {}, 60000*3); // sleep 3 minute's and search for job ID. CSO will time out the JOB eventually",
+							"    var maxNumberOfTries = 10; // your max number of tries",
+							"    if (!pm.collectionVariables.get(\"tries\")) { ",
+							"        pm.collectionVariables.set(\"tries\", 1);",
+							"        nextRequest = \"CSO-get_jobs\";",
+							"    }",
+							"    else {",
+							"        tries = parseInt(pm.collectionVariables.get(\"tries\"), 10);",
+							"        pm.collectionVariables.set(\"tries\", tries + 1);",
+							"        if (pm.collectionVariables.get(\"tries\") < maxNumberOfTries) {",
+							"            nextRequest = \"CSO-get_jobs\";",
+							"        }",
+							"        else {",
+							"            console.log('Site was not detected in 30 minutes, try manmualy again later .... ')",
+							"        }",
+							"    }",
+							"    pm.test.skip(`Bootstrap for ${pm.environment.get('site_name')} has not been detected wating 3 minutes and trying again ...`);",
+							"}",
+							"",
+							"console.log(`setting next request ... ${nextRequest}`);",
+							"postman.setNextRequest(nextRequest);",
+							""
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"var moment = require('moment');",
+							"var start_time = pm.collectionVariables.get('job_search_start_time');",
+							"pm.collectionVariables.set('now_time', moment().unix());",
+							"",
+							"//console.log(\"Pre-request start------------------------\");",
+							"console.log('-------------------- GET JOBs --------------------------------------');",
+							"console.log(` Query Start time: ${moment.unix(start_time).format('dd MMMM Do YYYY, hh:mm:ss a')}`);",
+							"console.log(` Queary End time (LTE): ${moment()}`);",
+							"//pm.collectionVariables.unset('jobs');",
+							"pm.collectionVariables.set('job_id','');"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "apikey",
+					"apikey": [
+						{
+							"key": "value",
+							"value": "{{token}}",
+							"type": "string"
+						},
+						{
+							"key": "key",
+							"value": "x-auth-token",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"query\": {\n        \"bool\": {\n            \"must\": [{\n                \"range\": {\n                    \"start_time\": {\n                        \"gte\": \"{{job_search_start_time}}\"\n                    }\n                }\n            }, {\n                \"range\": {\n                    \"start_time\": {\n                        \"lte\": \"{{now_time}}\"\n                    }\n                }\n            }, {\n                \"regexp\": {\n                    \"display_name._raw\": \"{{job_search_regex}}\"\n                }\n            }],\n            \"should\": [],\n            \"must_not\": [{\n                \"term\": {\n                    \"hidden_flag\": true\n                }\n            }]\n        }\n    },\n    \"from\": 0,\n    \"size\": 500,\n    \"sort\": [{\n        \"start_time._raw\": {\n            \"order\": \"asc\"\n        }\n    }],\n    \"detail\": true\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/job-service/job/_filter",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"job-service",
+						"job",
+						"_filter"
+					]
+				},
+				"description": "This will return jobs of lost hour (unless changed) of given tenant (depended on environment).\n\nIf it contains failed 'Service provisioning' job, it will store *job-id*, *x_request_id* and date of job (*request_id_date*) as variable to be used for device_errors or \"Errors from device-step-2\""
+			},
+			"response": []
+		},
+		{
+			"name": "CSO-get_jobs-bkp",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"var jsonData = JSON.parse(responseBody);",
+							"nextRequest = null;",
+							"var jobs = [];",
+							"//console.log(`Lenght of total value: ${jsonData.total.length}`);",
+							"",
+							"if (pm.response.code == 200 && jsonData.total >= 1) {",
+							"",
+							"    // Diving to individual job by findingout number of jobs(jobitems) ",
+							"    var jobitems = jsonData.total",
+							"    // Debug to view inside of loop in case of troubleshooting",
+							"    //console.log(`Lenght of job array ${jobitems}`);",
+							"",
+							"    for (var i = 0; i < jobitems; i++) {",
+							"        pm.collectionVariables.unset(\"tries\"); ",
+							"        // assign given i job to item",
+							"        var item = jsonData.job[i];",
+							"        //assign variables from each job",
+							"        status = item.status;",
+							"        name = item.display_name.replace(/_/g,' ');",
+							"        task_count = item.task_count;",
+							"        if(item.summary) {",
+							"            if (item.summary.fail_count && item.summary.fail_count.length > 0) { ",
+							"                fail_count = item.summary.fail_count; ",
+							"            }",
+							"            else {",
+							"            fail_count = 0;",
+							"            }",
+							"        } ",
+							"        else {",
+							"            fail_count = 0;",
+							"        }",
+							"        uuid = item.uuid;",
+							"        // Parent Job Test",
+							"        if (status === 'in-progress') {",
+							"            pm.test.skip(`Job ${name}still in progress ... `);  ",
+							"            jobs.push(item.uuid);",
+							"            nextRequest = \"CSO-job_status\";",
+							"        }    ",
+							"        else {",
+							"            jobs.push(item.uuid);",
+							"            ",
+							"            pm.test.skip(`Found job ${name} ...  `);         ",
+							"            nextRequest = \"CSO-job_status\";",
+							"        }",
+							"        // Child_size is count of pass and failed children job",
+							"        //child_size = item.summary.task_tree.child_task_status.failed + item.summary.task_tree.child_task_status.success;",
+							"        console.log(`Found ${item.status} Job ${name} ...`);",
+							"        //console.log(`Job ${name} has: ${item.status}`);",
+							"        //console.log(`- Job ID: ${item.uuid}`);",
+							"        //console.log(`- It had ${item.task_count} child-jobs from which ${fail_count - 1} had failed`);",
+							"        ",
+							"        //in case of service provisioning fails",
+							"        if (name.toLowerCase().includes('service provisioning')){",
+							"            pm.collectionVariables.set('job_id',item.uuid);",
+							"            console.log(`job_id set to: ${pm.collectionVariables.get('job_id')}`);",
+							"            if (typeof item['request_id'] != 'undefined') {",
+							"                pm.collectionVariables.set('x_request_id',item['request_id']);",
+							"                console.log(`Env x-reuest-id set to: ${pm.collectionVariables.get('x_request_id')}`);",
+							"            }",
+							"            if (typeof item.id_perms['created'] != 'undefined') {",
+							"                pm.collectionVariables.set('request_id_date',item.id_perms.created.substring(0,10));",
+							"                console.log(`Env request_id_date: ${pm.collectionVariables.get('request_id_date')}`);",
+							"            }",
+							"        }",
+							"    }      ",
+							"    console.log('Found job ID\\'s:\\n',jobs);",
+							"    pm.collectionVariables.set('jobs',JSON.stringify(jobs));  ",
+							"}",
+							"   ",
+							"",
+							"// In case device has not been detected and Bootstrap did not started",
+							"if (pm.response.code == 200 && jsonData.total == 0 && pm.collectionVariables.get('job_search_regex','Bootstrap Device ' + pm.environment.get('site_name'))) {",
+							"    console.log(`Site ${pm.environment.get('site_name')} has not been detected ${tries}x wating 3 minutes and trying again ...`);",
+							"    setTimeout(function() {}, 60000*3); // sleep 3 minute's and search for job ID. CSO will time out the JOB eventually",
+							"    var maxNumberOfTries = 10; // your max number of tries",
+							"    if (!pm.collectionVariables.get(\"tries\")) { ",
+							"        pm.collectionVariables.set(\"tries\", 1);",
+							"        nextRequest = \"CSO-get_jobs\";",
+							"    }",
+							"    else {",
+							"        tries = parseInt(pm.collectionVariables.get(\"tries\"), 10);",
+							"        pm.collectionVariables.set(\"tries\", tries + 1);",
+							"        if (pm.collectionVariables.get(\"tries\") < maxNumberOfTries) {",
+							"            nextRequest = \"CSO-get_jobs\";",
+							"        }",
+							"        else {",
+							"            console.log('Site was not detected in 30 minutes, try manmualy again later .... ')",
+							"        }",
+							"    }",
+							"    pm.test.skip(`Bootstrap for ${pm.environment.get('site_name')} has not been detected wating 3 minutes and trying again ...`);",
+							"}",
+							"",
+							"console.log(`setting next request ... ${nextRequest}`);",
+							"postman.setNextRequest(nextRequest);",
+							""
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"var moment = require('moment');",
+							"var start_time = pm.collectionVariables.get('job_search_start_time');",
+							"pm.collectionVariables.set('now_time', moment().unix());",
+							"",
+							"//console.log(\"Pre-request start------------------------\");",
+							"console.log('-------------------- GET JOBs --------------------------------------');",
+							"console.log(` Query Start time: ${moment.unix(start_time).format('dd MMMM Do YYYY, hh:mm:ss a')}`);",
+							"console.log(` Queary End time (LTE): ${moment()}`);",
+							"//pm.collectionVariables.unset('jobs');",
+							"pm.collectionVariables.set('job_id','');"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "apikey",
+					"apikey": [
+						{
+							"key": "value",
+							"value": "{{token}}",
+							"type": "string"
+						},
+						{
+							"key": "key",
+							"value": "x-auth-token",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"query\": {\n        \"bool\": {\n            \"must\": [{\n                \"range\": {\n                    \"start_time\": {\n                        \"gte\": \"{{job_search_start_time}}\"\n                    }\n                }\n            }, {\n                \"range\": {\n                    \"start_time\": {\n                        \"lte\": \"{{now_time}}\"\n                    }\n                }\n            }, {\n                \"regexp\": {\n                    \"display_name._raw\": \"{{job_search_regex}}\"\n                }\n            }],\n            \"should\": [],\n            \"must_not\": [{\n                \"term\": {\n                    \"hidden_flag\": true\n                }\n            }]\n        }\n    },\n    \"from\": 0,\n    \"size\": 100,\n    \"sort\": [{\n        \"start_time._raw\": {\n            \"order\": \"asc\"\n        }\n    }],\n    \"detail\": true\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/job-service/job/_filter",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"job-service",
+						"job",
+						"_filter"
+					]
+				},
+				"description": "This will return jobs of lost hour (unless changed) of given tenant (depended on environment).\n\nIf it contains failed 'Service provisioning' job, it will store *job-id*, *x_request_id* and date of job (*request_id_date*) as variable to be used for device_errors or \"Errors from device-step-2\""
+			},
+			"response": []
+		}
+	],
+	"auth": {
+		"type": "apikey",
+		"apikey": [
+			{
+				"key": "value",
+				"value": "{{token}}",
+				"type": "string"
+			},
+			{
+				"key": "key",
+				"value": "x-auth-token",
+				"type": "string"
+			}
+		]
+	},
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "x_request_id",
+			"value": ""
+		}
+	]
+}
