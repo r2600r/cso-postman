@@ -1,0 +1,295 @@
+{
+	"info": {
+		"_postman_id": "6e5a5e54-9f94-4fa1-96e8-78ab46dcbd8d",
+		"name": "CSO SFP verification",
+		"description": "* * *\n\nCopyright 2022 Juniper Networks, Inc. All rights reserved.\n\nauthor: Patrik Bok\n\nLicensed under the Juniper Networks Script Software License (the \"License\").  \nYou may not use this script file except in compliance with the License, which is located at  \n[http://www.juniper.net/support/legal/scriptlicense/](http://www.juniper.net/support/legal/scriptlicense/)  \nUnless required by applicable law or otherwise agreed to in writing by the parties, software  \ndistributed under the License is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n\n* * *\n\nThis runner will check all deployed sites in CSO, gather their names and validate if each devices detail is configured with SFP under interface ge-0/0/6. In the end, it will produce sites as passed test and also in console output.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Get Token",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"function cleanup() {",
+							"    const clean = _.keys(pm.collectionVariables.toObject())",
+							"    _.each(clean, (arrItem) => {",
+							"        pm.collectionVariables.unset(arrItem);",
+							"    })",
+							"}",
+							"console.log('Cleaning collection variables ...');",
+							"cleanup();"
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.environment.set(\"token\", postman.getResponseHeader(\"X-Subject-Token\"));",
+							"console.log(`Got Token ...`);"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"name": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"auth\": {\r\n\t\"identity\": {\r\n\t\t\"methods\": [\"password\"],\r\n\t\t\"password\": {\r\n\t\t\t\"user\": {\r\n\t\t\t\t\"domain\": {\r\n\t\t\t\t\t\"id\": \"default\"\r\n\t\t\t\t},\r\n\t\t\t\t\"name\": \"{{user_name}}\",\r\n\t\t\t\t\"password\": \"{{password}}\"\r\n\t\t\t}\r\n\t\t}\r\n\t},\r\n\t\"scope\": {\r\n     \"project\": {\r\n       \"domain\": {\r\n         \"id\": \"default\"\r\n       },\r\n       \"name\": \"{{tenant_name}}\"\r\n     }\r\n    }\r\n  }\r\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/v3/auth/tokens",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"v3",
+						"auth",
+						"tokens"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "CSO-get_all_names",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"var jsonData = JSON.parse(responseBody);",
+							"nextRequest = null;",
+							"let sites = [];",
+							"down_site = [];",
+							"if (pm.response.code == 200 || jsonData.total > 0) {",
+							"    if (Array.isArray(jsonData.device)) {",
+							"        _.each(jsonData.device, (device) => {",
+							"            if (device.tenant_name.includes(pm.environment.get('tenant_name'))) {",
+							"                sites.push(device.display_name);",
+							"            }",
+							"            if (device.tenant_name.includes(pm.environment.get('tenant_name')) && device.state != 'up') {",
+							"                down_site.push(device.display_name);",
+							"            }",
+							"",
+							"        })",
+							"    }",
+							"}",
+							"if (sites.length > 1) {",
+							"    nextRequest = 'CSO-get_device_info';",
+							"    console.info(`Detected ${sites.length} sites in org ${pm.environment.get('tenant_name')}`);",
+							"    console.info(`Where ${down_site.length} sites are currenlty down ...`)",
+							"    pm.collectionVariables.set('sites',JSON.stringify(sites));",
+							"    pm.collectionVariables.set('down_sites',JSON.stringify(down_site));",
+							"}",
+							"postman.setNextRequest(nextRequest);"
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"query\": {\n    \"bool\": {\n      \"must\": [\n        {\n          \"terms\": {\n            \"device_type._raw\": [\n              \"cpe\"\n            ]\n          }\n        }\n      ],\n      \"should\": [],\n      \"must_not\": [\n        {\n          \"term\": {\n            \"detach_state._raw\": \"SUCCESS\"\n          }\n        },\n        {\n          \"term\": {\n            \"device_redundancy_role._raw\": \"PRIMARY_MEMBER\"\n          }\n        },\n        {\n          \"terms\": {\n            \"hub_capabilities._raw\": [\n              \"OAM_ONLY\",\n              \"DATA_ONLY\",\n              \"OAM_AND_DATA\"\n            ]\n          }\n        }\n      ]\n    }\n  },\n  \"from\": 0,\n  \"size\": 5000,\n  \"sort\": [\n    {\n      \"last_modified._raw\": {\n        \"order\": \"desc\"\n      }\n    }\n  ],\n  \"detail\": true\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/data-view-central/device/_filter",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"data-view-central",
+						"device",
+						"_filter"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "CSO-get_device_info",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"var jsonData = JSON.parse(responseBody);",
+							"nextRequest = null;",
+							"sfp_sites = [];",
+							"",
+							"function collect_name() {",
+							"    sfp_site = pm.collectionVariables.get('sfp_sites');",
+							"    if(sfp_site && JSON.parse(sfp_site).length > 0) {",
+							"        sfp_site = JSON.parse(sfp_site);",
+							"        sfp_site.push(pm.collectionVariables.get('site_name'));",
+							"        pm.collectionVariables.set('sfp_sites', JSON.stringify(sfp_site));",
+							"    }",
+							"    else {",
+							"        let sfp_site = [];",
+							"        sfp_site.push(pm.collectionVariables.get('site_name'));",
+							"        pm.collectionVariables.set('sfp_sites', JSON.stringify(sfp_site));",
+							"    }",
+							"}",
+							"",
+							"function clean_up() {",
+							"    const clean = _.keys(pm.collectionVariables.toObject())",
+							"    _.each(clean, (arrItem) => {",
+							"        pm.collectionVariables.unset(arrItem);",
+							"    })",
+							"}",
+							"",
+							"//return an array of keys that match on a certain value val",
+							"function getKeys(obj, val) {",
+							"    var objects = [];",
+							"    //console.log(`Object: ${obj}`);",
+							"    //console.log(`Looking for: ${val}`);",
+							"    for (var i in obj) {",
+							"        if (!obj.hasOwnProperty(i)) continue;",
+							"        if (typeof obj[i] == 'object') {",
+							"            objects = objects.concat(getKeys(obj[i], val));",
+							"        } else if (obj[i] == val) {",
+							"            objects.push(i);",
+							"        }",
+							"    }",
+							"    return objects;",
+							"}",
+							"",
+							"if (pm.response.code == 200 && jsonData.total > 0) {",
+							"    //console.info('got ...', getKeys(jsonData,'ge-0/0/6').length);",
+							"    if (getKeys(jsonData,'ge-0/0/6').length > 0){",
+							"        /*",
+							"        pm.test(`Site ${pm.collectionVariables.get('site_name')} has SFP installed ...`, function () {",
+							"            pm.expect(pm.response.code).to.equal(200);",
+							"        });",
+							"        */",
+							"        //pm.test.skip(`Site ${pm.collectionVariables.get('site_name')} has SFP installed ...`);",
+							"        collect_name();",
+							"    }",
+							"}",
+							"org_sites = pm.collectionVariables.get('sites');",
+							"if(org_sites && JSON.parse(org_sites).length > 0) {",
+							"    nextRequest = 'CSO-get_device_info';",
+							"}",
+							"else {",
+							"    sites = pm.collectionVariables.get('sfp_sites');",
+							"    console.info(`${JSON.parse(sites).length} SFP sites: ${JSON.parse(sites)}`);",
+							"    pm.test(`${JSON.parse(sites).length} SFP sites: ${JSON.parse(sites)}`, function () {",
+							"        pm.expect(pm.response.code).to.equal(200);",
+							"    });",
+							"    clean_up();",
+							"}",
+							"postman.setNextRequest(nextRequest);"
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"sites = pm.collectionVariables.get('sites');",
+							"if(sites && JSON.parse(sites).length > 0) {",
+							"    sites =JSON.parse(sites);",
+							"    var current_site_name = sites.shift();",
+							"    if (typeof current_site_name !== 'undefined') {pm.collectionVariables.set(\"site_name\", current_site_name); }",
+							"    pm.collectionVariables.set(\"sites\", JSON.stringify(sites));",
+							"}",
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/data-view-central/tenant-sites?detail=true&filter=display_name={{site_name}}",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"data-view-central",
+						"tenant-sites"
+					],
+					"query": [
+						{
+							"key": "detail",
+							"value": "true"
+						},
+						{
+							"key": "filter",
+							"value": "display_name={{site_name}}"
+						}
+					]
+				}
+			},
+			"response": []
+		}
+	],
+	"auth": {
+		"type": "apikey",
+		"apikey": [
+			{
+				"key": "value",
+				"value": "{{token}}",
+				"type": "string"
+			},
+			{
+				"key": "key",
+				"value": "x-auth-token",
+				"type": "string"
+			}
+		]
+	},
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	]
+}
